@@ -1,5 +1,5 @@
 import { Routes, Route } from "react-router-dom";
-import { AuthProvider } from "@/contexts/AuthContext";
+import { AuthProvider } from "@/contexts/authContext";
 
 // Public pages
 import LandingPage from "@/pages/LandingPage";
