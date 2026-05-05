@@ -1,7 +1,13 @@
 import axios from "axios";
 
+// ==========================================
+// AXIOS INSTANCE
+// baseURL dari .env — VITE_API_URL
+// Di development: http://localhost:5000/api
+// Di production: ganti sesuai domain backend
+// ==========================================
 const api = axios.create({
-  baseURL: "/api",
+  baseURL: import.meta.env.VITE_API_URL as string,
   headers: {
     "Content-Type": "application/json",
   },
@@ -32,7 +38,6 @@ api.interceptors.response.use(
   (error) => {
     if (error.response?.status === 401) {
       localStorage.removeItem("admin_token");
-      // Hanya redirect jika sedang di halaman admin
       if (window.location.pathname.startsWith("/admin")) {
         window.location.href = "/admin/login";
       }

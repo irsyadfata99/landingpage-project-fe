@@ -1,19 +1,23 @@
 import { Routes, Route } from "react-router-dom";
-import { AuthProvider } from "@/contexts/authContext";
+import { AuthProvider } from "@/contexts/AuthContext";
 
 // Public pages
 import LandingPage from "@/pages/LandingPage";
 import CheckoutPage from "@/pages/CheckoutPage";
 import TrackingPage from "@/pages/TrackingPage";
 
-// Admin pages
+// Admin layout + auth
 import AdminLayout from "@/layouts/AdminLayout";
+
+// Admin pages — sudah real
 import AdminLoginPage from "@/pages/admin/LoginPage";
 import AdminDashboardPage from "@/pages/admin/DashboardPage";
 import AdminOrdersPage from "@/pages/admin/OrdersPage";
 import AdminOrderDetailPage from "@/pages/admin/OrderDetailPage";
+import AdminProductsPage from "@/pages/admin/ProductsPage";
+
+// Admin pages — masih placeholder, akan diisi bertahap
 import {
-  AdminProductsPage,
   AdminContentPage,
   AdminVouchersPage,
   AdminReviewsPage,
