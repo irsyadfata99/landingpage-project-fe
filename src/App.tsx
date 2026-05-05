@@ -10,9 +10,9 @@ import TrackingPage from "@/pages/TrackingPage";
 import AdminLayout from "@/layouts/AdminLayout";
 import AdminLoginPage from "@/pages/admin/LoginPage";
 import AdminDashboardPage from "@/pages/admin/DashboardPage";
+import AdminOrdersPage from "@/pages/admin/OrdersPage";
+import AdminOrderDetailPage from "@/pages/admin/OrderDetailPage";
 import {
-  AdminOrdersPage,
-  AdminOrderDetailPage,
   AdminProductsPage,
   AdminContentPage,
   AdminVouchersPage,
