@@ -10,16 +10,14 @@ import TrackingPage from "@/pages/TrackingPage";
 import AdminLayout from "@/layouts/AdminLayout";
 import AdminLoginPage from "@/pages/admin/LoginPage";
 import AdminDashboardPage from "@/pages/admin/DashboardPage";
-import {
-  AdminOrdersPage,
-  AdminOrderDetailPage,
-  AdminProductsPage,
-  AdminContentPage,
-  AdminVouchersPage,
-  AdminReviewsPage,
-  AdminWithdrawalPage,
-  AdminSettingsPage,
-} from "@/pages/admin/Placeholders";
+import AdminOrdersPage from "@/pages/admin/OrdersPage";
+import AdminOrderDetailPage from "@/pages/admin/OrderDetailPage";
+import AdminProductsPage from "@/pages/admin/ProductsPage";
+import AdminContentPage from "@/pages/admin/ContentPage";
+import AdminVouchersPage from "@/pages/admin/VouchersPage";
+import AdminReviewsPage from "@/pages/admin/ReviewsPage";
+import AdminWithdrawalPage from "@/pages/admin/WithdrawalPage";
+import AdminSettingsPage from "@/pages/admin/SettingsPage";
 
 function App() {
   return (
