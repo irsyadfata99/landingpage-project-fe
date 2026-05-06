@@ -2,15 +2,15 @@ import { useState, useEffect, useCallback } from "react";
 import api from "@/services/axios.config";
 
 // ==========================================
-// TYPES
+// TYPES (sesuai backend aktual)
 // ==========================================
 interface EmailTemplate {
   id: string;
-  key: string;
-  name: string;
+  type: "payment_success" | "shipping" | "delivery_confirm";
   subject: string;
-  body: string;
-  variables: string[];
+  body_html: string;
+  available_vars: string[];
+  is_active: boolean;
   updated_at: string;
 }
 
@@ -146,15 +146,16 @@ function SectionCard({
 
 // ==========================================
 // CHANGE PASSWORD FORM
+// Endpoint: PUT /admin/password (sesuai backend)
 // ==========================================
 function ChangePasswordForm() {
   const [form, setForm] = useState({
-    current_password: "",
+    old_password: "",
     new_password: "",
     confirm_password: "",
   });
   const [showPwd, setShowPwd] = useState({
-    current: false,
+    old: false,
     new: false,
     confirm: false,
   });
@@ -167,10 +168,10 @@ function ChangePasswordForm() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setAlert(null);
-    if (form.new_password.length < 8)
+    if (form.new_password.length < 6)
       return setAlert({
         type: "error",
-        msg: "Password baru minimal 8 karakter",
+        msg: "Password baru minimal 6 karakter",
       });
     if (form.new_password !== form.confirm_password)
       return setAlert({
@@ -179,12 +180,14 @@ function ChangePasswordForm() {
       });
     setLoading(true);
     try {
-      await api.patch("/admin/settings/password", {
-        current_password: form.current_password,
+      // Endpoint sesuai backend: PUT /admin/password
+      // Body: { old_password, new_password }
+      await api.put("/admin/password", {
+        old_password: form.old_password,
         new_password: form.new_password,
       });
       setAlert({ type: "success", msg: "Password berhasil diubah" });
-      setForm({ current_password: "", new_password: "", confirm_password: "" });
+      setForm({ old_password: "", new_password: "", confirm_password: "" });
     } catch (err: unknown) {
       const e = err as { response?: { data?: { message?: string } } };
       setAlert({
@@ -256,12 +259,12 @@ function ChangePasswordForm() {
 
       <Field label="Password Saat Ini" required>
         <PwdInput
-          field="current_password"
+          field="old_password"
           placeholder="Password lama"
-          showKey="current"
+          showKey="old"
         />
       </Field>
-      <Field label="Password Baru" required hint="Minimal 8 karakter">
+      <Field label="Password Baru" required hint="Minimal 6 karakter">
         <PwdInput
           field="new_password"
           placeholder="Password baru"
@@ -284,7 +287,7 @@ function ChangePasswordForm() {
               const strength = Math.min(
                 4,
                 [
-                  form.new_password.length >= 8,
+                  form.new_password.length >= 6,
                   /[A-Z]/.test(form.new_password),
                   /[0-9]/.test(form.new_password),
                   /[^A-Za-z0-9]/.test(form.new_password),
@@ -325,7 +328,7 @@ function ChangePasswordForm() {
           type="submit"
           disabled={
             loading ||
-            !form.current_password ||
+            !form.old_password ||
             !form.new_password ||
             !form.confirm_password
           }
@@ -340,7 +343,7 @@ function ChangePasswordForm() {
             cursor: loading ? "not-allowed" : "pointer",
             opacity:
               loading ||
-              !form.current_password ||
+              !form.old_password ||
               !form.new_password ||
               !form.confirm_password
                 ? 0.7
@@ -356,6 +359,8 @@ function ChangePasswordForm() {
 
 // ==========================================
 // EMAIL TEMPLATE EDITOR
+// Endpoint: GET/PUT /admin/email-templates/:type
+// Type: payment_success | shipping | delivery_confirm
 // ==========================================
 function EmailTemplateEditor({
   template,
@@ -366,7 +371,8 @@ function EmailTemplateEditor({
 }) {
   const [form, setForm] = useState({
     subject: template.subject,
-    body: template.body,
+    body_html: template.body_html,
+    is_active: template.is_active,
   });
   const [loading, setLoading] = useState(false);
   const [alert, setAlert] = useState<{
@@ -375,8 +381,18 @@ function EmailTemplateEditor({
   } | null>(null);
   const [previewMode, setPreviewMode] = useState(false);
 
-  const insertVariable = (variable: string) => {
-    setForm((p) => ({ ...p, body: p.body + `{{${variable}}}` }));
+  useEffect(() => {
+    setForm({
+      subject: template.subject,
+      body_html: template.body_html,
+      is_active: template.is_active,
+    });
+    setPreviewMode(false);
+    setAlert(null);
+  }, [template.type]);
+
+  const insertVar = (v: string) => {
+    setForm((p) => ({ ...p, body_html: p.body_html + v }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -384,7 +400,13 @@ function EmailTemplateEditor({
     setAlert(null);
     setLoading(true);
     try {
-      await api.put(`/admin/settings/email-templates/${template.id}`, form);
+      // Endpoint sesuai backend: PUT /admin/email-templates/:type
+      // Body: { subject?, body_html?, is_active? }
+      await api.put(`/admin/email-templates/${template.type}`, {
+        subject: form.subject,
+        body_html: form.body_html,
+        is_active: form.is_active,
+      });
       setAlert({ type: "success", msg: "Template berhasil disimpan!" });
       onSuccess();
     } catch (err: unknown) {
@@ -396,6 +418,12 @@ function EmailTemplateEditor({
     } finally {
       setLoading(false);
     }
+  };
+
+  const TYPE_LABEL: Record<EmailTemplate["type"], string> = {
+    payment_success: "Pembayaran Berhasil",
+    shipping: "Pesanan Dikirim",
+    delivery_confirm: "Pesanan Selesai",
   };
 
   return (
@@ -411,7 +439,49 @@ function EmailTemplateEditor({
         />
       )}
 
-      <Field label="Subject Email" required>
+      {/* Template type badge */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          flexWrap: "wrap",
+          gap: 8,
+        }}
+      >
+        <span
+          style={{
+            background: "#EFF6FF",
+            color: "#1D4ED8",
+            fontSize: 12,
+            fontWeight: 700,
+            padding: "4px 10px",
+            borderRadius: 6,
+            fontFamily: "monospace",
+          }}
+        >
+          {template.type}
+        </span>
+        {/* Toggle aktif */}
+        <button
+          type="button"
+          onClick={() => setForm((p) => ({ ...p, is_active: !p.is_active }))}
+          style={{
+            padding: "5px 12px",
+            border: `2px solid ${form.is_active ? "#10B981" : "#E5E7EB"}`,
+            borderRadius: 8,
+            background: form.is_active ? "#ECFDF5" : "#F9FAFB",
+            color: form.is_active ? "#065F46" : "#6B7280",
+            fontSize: 12,
+            fontWeight: 700,
+            cursor: "pointer",
+          }}
+        >
+          {form.is_active ? "✅ Aktif" : "⏸️ Nonaktif"}
+        </button>
+      </div>
+
+      <Field label={`Subject — ${TYPE_LABEL[template.type]}`} required>
         <input
           style={inputStyle}
           value={form.subject}
@@ -422,18 +492,18 @@ function EmailTemplateEditor({
         />
       </Field>
 
-      {/* Variables */}
-      {template.variables.length > 0 && (
+      {/* Available vars */}
+      {template.available_vars.length > 0 && (
         <div>
           <p style={{ fontSize: 12, color: "#6B7280", marginBottom: 6 }}>
-            Variabel tersedia (klik untuk insert):
+            Variabel tersedia (klik untuk insert ke body):
           </p>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-            {template.variables.map((v) => (
+            {template.available_vars.map((v) => (
               <button
                 key={v}
                 type="button"
-                onClick={() => insertVariable(v)}
+                onClick={() => insertVar(v)}
                 style={{
                   padding: "4px 10px",
                   background: "#EFF6FF",
@@ -446,7 +516,7 @@ function EmailTemplateEditor({
                   fontFamily: "monospace",
                 }}
               >
-                {`{{${v}}}`}
+                {v}
               </button>
             ))}
           </div>
@@ -461,9 +531,7 @@ function EmailTemplateEditor({
           alignItems: "center",
         }}
       >
-        <label style={{ ...labelStyle, marginBottom: 0 }}>
-          Isi Email (HTML diizinkan)
-        </label>
+        <label style={{ ...labelStyle, marginBottom: 0 }}>Body HTML</label>
         <button
           type="button"
           onClick={() => setPreviewMode((p) => !p)}
@@ -492,8 +560,10 @@ function EmailTemplateEditor({
             background: "#fff",
             fontSize: 14,
             lineHeight: 1.7,
+            overflowY: "auto",
+            maxHeight: 400,
           }}
-          dangerouslySetInnerHTML={{ __html: form.body }}
+          dangerouslySetInnerHTML={{ __html: form.body_html }}
         />
       ) : (
         <textarea
@@ -504,8 +574,10 @@ function EmailTemplateEditor({
             fontFamily: "monospace",
             fontSize: 13,
           }}
-          value={form.body}
-          onChange={(e) => setForm((p) => ({ ...p, body: e.target.value }))}
+          value={form.body_html}
+          onChange={(e) =>
+            setForm((p) => ({ ...p, body_html: e.target.value }))
+          }
           required
           onFocus={(e) => (e.currentTarget.style.borderColor = "#3B82F6")}
           onBlur={(e) => (e.currentTarget.style.borderColor = "#E5E7EB")}
@@ -537,32 +609,42 @@ function EmailTemplateEditor({
 
 // ==========================================
 // EMAIL TEMPLATES SECTION
+// GET /admin/email-templates — list semua
+// GET /admin/email-templates/:type — detail per type
 // ==========================================
 function EmailTemplatesSection() {
   const [templates, setTemplates] = useState<EmailTemplate[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTemplate, setActiveTemplate] = useState<string | null>(null);
+  const [activeType, setActiveType] = useState<EmailTemplate["type"] | null>(
+    null,
+  );
 
   const fetchTemplates = useCallback(async () => {
     setLoading(true);
     try {
       const res = await api.get<{ data: EmailTemplate[] }>(
-        "/admin/settings/email-templates",
+        "/admin/email-templates",
       );
       setTemplates(res.data.data);
-      if (res.data.data.length > 0 && !activeTemplate) {
-        setActiveTemplate(res.data.data[0].id);
+      if (res.data.data.length > 0 && !activeType) {
+        setActiveType(res.data.data[0].type);
       }
     } catch {
       /* noop */
     } finally {
       setLoading(false);
     }
-  }, [activeTemplate]);
+  }, [activeType]);
 
   useEffect(() => {
     void fetchTemplates();
   }, [fetchTemplates]);
+
+  const TYPE_LABEL: Record<string, string> = {
+    payment_success: "💳 Pembayaran",
+    shipping: "🚚 Pengiriman",
+    delivery_confirm: "🎉 Selesai",
+  };
 
   if (loading) {
     return (
@@ -588,48 +670,63 @@ function EmailTemplatesSection() {
     return (
       <div style={{ padding: "40px", textAlign: "center", color: "#9CA3AF" }}>
         <p style={{ fontSize: 36, marginBottom: 12 }}>📧</p>
-        <p style={{ fontSize: 14 }}>
-          Belum ada template email terdaftar di server
-        </p>
+        <p style={{ fontSize: 14 }}>Belum ada template email tersedia</p>
       </div>
     );
   }
 
-  const current = templates.find((t) => t.id === activeTemplate);
+  const currentTemplate = templates.find((t) => t.type === activeType);
 
   return (
     <div style={{ display: "flex", gap: 20 }}>
-      {/* Template list */}
-      <div style={{ width: 220, flexShrink: 0 }}>
+      {/* Template list — navigasi per type */}
+      <div style={{ width: 200, flexShrink: 0 }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
           {templates.map((t) => (
             <button
-              key={t.id}
-              onClick={() => setActiveTemplate(t.id)}
+              key={t.type}
+              onClick={() => setActiveType(t.type)}
               style={{
                 padding: "10px 12px",
                 borderRadius: 8,
                 border: "none",
                 textAlign: "left",
-                background: activeTemplate === t.id ? "#EFF6FF" : "transparent",
-                color: activeTemplate === t.id ? "#1D4ED8" : "#374151",
+                background: activeType === t.type ? "#EFF6FF" : "transparent",
+                color: activeType === t.type ? "#1D4ED8" : "#374151",
                 fontSize: 13,
-                fontWeight: activeTemplate === t.id ? 700 : 500,
+                fontWeight: activeType === t.type ? 700 : 500,
                 cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 6,
               }}
             >
-              📧 {t.name}
+              <span>{TYPE_LABEL[t.type] ?? t.type}</span>
+              {!t.is_active && (
+                <span
+                  style={{
+                    fontSize: 10,
+                    background: "#F3F4F6",
+                    color: "#9CA3AF",
+                    padding: "1px 6px",
+                    borderRadius: 99,
+                  }}
+                >
+                  Off
+                </span>
+              )}
             </button>
           ))}
         </div>
       </div>
 
       {/* Editor */}
-      <div style={{ flex: 1 }}>
-        {current ? (
+      <div style={{ flex: 1, minWidth: 0 }}>
+        {currentTemplate ? (
           <EmailTemplateEditor
-            key={current.id}
-            template={current}
+            key={currentTemplate.type}
+            template={currentTemplate}
             onSuccess={() => void fetchTemplates()}
           />
         ) : (
@@ -644,6 +741,87 @@ function EmailTemplatesSection() {
             Pilih template di sebelah kiri
           </p>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ==========================================
+// ADMIN INFO SECTION
+// GET /admin/me
+// ==========================================
+function AdminInfoSection() {
+  const [info, setInfo] = useState<{
+    id: string;
+    username: string;
+    email: string;
+    created_at: string;
+  } | null>(null);
+
+  useEffect(() => {
+    const fetch = async () => {
+      try {
+        const res = await api.get<{
+          data: {
+            id: string;
+            username: string;
+            email: string;
+            created_at: string;
+          };
+        }>("/admin/me");
+        setInfo(res.data.data);
+      } catch {
+        /* noop */
+      }
+    };
+    void fetch();
+  }, []);
+
+  if (!info) return null;
+
+  return (
+    <div
+      style={{
+        background: "#F9FAFB",
+        border: "1px solid #E5E7EB",
+        borderRadius: 10,
+        padding: "16px 20px",
+        display: "flex",
+        alignItems: "center",
+        gap: 14,
+        marginBottom: 4,
+      }}
+    >
+      <div
+        style={{
+          width: 44,
+          height: 44,
+          borderRadius: "50%",
+          background: "#1D4ED8",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontSize: 18,
+          fontWeight: 700,
+          color: "#fff",
+          flexShrink: 0,
+        }}
+      >
+        {info.username.charAt(0).toUpperCase()}
+      </div>
+      <div>
+        <p style={{ fontWeight: 700, fontSize: 15, color: "#111827" }}>
+          {info.username}
+        </p>
+        <p style={{ fontSize: 13, color: "#6B7280" }}>{info.email}</p>
+        <p style={{ fontSize: 12, color: "#9CA3AF", marginTop: 2 }}>
+          Bergabung:{" "}
+          {new Date(info.created_at).toLocaleDateString("id-ID", {
+            day: "numeric",
+            month: "long",
+            year: "numeric",
+          })}
+        </p>
       </div>
     </div>
   );
@@ -711,6 +889,7 @@ export default function AdminSettingsPage() {
       {/* Content */}
       {activeTab === "password" && (
         <SectionCard title="Ganti Password Admin" icon="🔒">
+          <AdminInfoSection />
           <ChangePasswordForm />
         </SectionCard>
       )}
@@ -725,8 +904,8 @@ export default function AdminSettingsPage() {
               lineHeight: 1.6,
             }}
           >
-            Kelola template email yang dikirim ke customer. Gunakan variabel
-            yang tersedia untuk personalisasi pesan.
+            Kelola template email yang dikirim ke customer. Klik variabel untuk
+            menyisipkan ke body HTML.
           </p>
           <EmailTemplatesSection />
         </SectionCard>

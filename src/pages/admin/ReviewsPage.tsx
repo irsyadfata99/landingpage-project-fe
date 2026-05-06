@@ -5,19 +5,18 @@ import Modal from "@/components/common/Modal";
 // ==========================================
 // TYPES
 // ==========================================
-type ReviewStatus = "PENDING" | "APPROVED" | "REJECTED";
-
 interface Review {
   id: string;
+  product_id: string;
   order_id: string;
-  order_code: string;
   customer_name: string;
   customer_email: string;
   product_name: string;
   rating: number;
-  content: string;
-  status: ReviewStatus;
+  comment: string | null;
+  is_approved: boolean;
   created_at: string;
+  updated_at: string;
 }
 
 // ==========================================
@@ -45,20 +44,10 @@ const StarRating = ({ rating }: { rating: number }) => (
   </div>
 );
 
-const STATUS_STYLE: Record<
-  ReviewStatus,
-  { label: string; color: string; bg: string }
-> = {
-  PENDING: { label: "Menunggu", color: "#92400E", bg: "#FEF3C7" },
-  APPROVED: { label: "Disetujui", color: "#065F46", bg: "#D1FAE5" },
-  REJECTED: { label: "Ditolak", color: "#991B1B", bg: "#FEE2E2" },
-};
-
 const STATUS_OPTIONS = [
-  { value: "", label: "Semua Status" },
-  { value: "PENDING", label: "Menunggu" },
-  { value: "APPROVED", label: "Disetujui" },
-  { value: "REJECTED", label: "Ditolak" },
+  { value: "", label: "Semua" },
+  { value: "false", label: "Menunggu Moderasi" },
+  { value: "true", label: "Disetujui" },
 ];
 
 // ==========================================
@@ -69,18 +58,17 @@ function ReviewDetailModal({
   onClose,
   review,
   onApprove,
-  onReject,
+  onDelete,
   processing,
 }: {
   isOpen: boolean;
   onClose: () => void;
   review: Review | null;
   onApprove: (id: string) => Promise<void>;
-  onReject: (id: string) => Promise<void>;
+  onDelete: (id: string) => Promise<void>;
   processing: string | null;
 }) {
   if (!review) return null;
-  const cfg = STATUS_STYLE[review.status];
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Detail Review">
@@ -109,12 +97,6 @@ function ReviewDetailModal({
               <p style={{ fontSize: 12, color: "#6B7280" }}>
                 {review.customer_email}
               </p>
-              <p style={{ fontSize: 12, color: "#6B7280", marginTop: 2 }}>
-                Order:{" "}
-                <span style={{ fontFamily: "monospace", color: "#3B82F6" }}>
-                  {review.order_code}
-                </span>
-              </p>
             </div>
             <span
               style={{
@@ -122,12 +104,12 @@ function ReviewDetailModal({
                 borderRadius: 99,
                 fontSize: 12,
                 fontWeight: 700,
-                color: cfg.color,
-                background: cfg.bg,
+                color: review.is_approved ? "#065F46" : "#92400E",
+                background: review.is_approved ? "#D1FAE5" : "#FEF3C7",
                 whiteSpace: "nowrap",
               }}
             >
-              {cfg.label}
+              {review.is_approved ? "Disetujui" : "Menunggu"}
             </span>
           </div>
         </div>
@@ -156,7 +138,9 @@ function ReviewDetailModal({
             Isi Review
           </p>
           <p style={{ fontSize: 14, lineHeight: 1.7, color: "#111827" }}>
-            {review.content}
+            {review.comment ?? (
+              <span style={{ color: "#9CA3AF" }}>Tidak ada komentar</span>
+            )}
           </p>
         </div>
 
@@ -165,26 +149,8 @@ function ReviewDetailModal({
         </p>
 
         {/* Actions */}
-        {review.status === "PENDING" && (
-          <div style={{ display: "flex", gap: 10 }}>
-            <button
-              onClick={() => void onReject(review.id)}
-              disabled={processing === review.id}
-              style={{
-                flex: 1,
-                padding: "11px",
-                background: "#FEF2F2",
-                color: "#DC2626",
-                border: "1px solid #FCA5A5",
-                borderRadius: 8,
-                fontWeight: 700,
-                fontSize: 14,
-                cursor: processing === review.id ? "not-allowed" : "pointer",
-                opacity: processing === review.id ? 0.7 : 1,
-              }}
-            >
-              ❌ Tolak
-            </button>
+        <div style={{ display: "flex", gap: 10 }}>
+          {!review.is_approved && (
             <button
               onClick={() => void onApprove(review.id)}
               disabled={processing === review.id}
@@ -203,14 +169,12 @@ function ReviewDetailModal({
             >
               {processing === review.id ? "⏳ Memproses..." : "✅ Setujui"}
             </button>
-          </div>
-        )}
-        {review.status === "APPROVED" && (
+          )}
           <button
-            onClick={() => void onReject(review.id)}
+            onClick={() => void onDelete(review.id)}
             disabled={processing === review.id}
             style={{
-              width: "100%",
+              flex: 1,
               padding: "11px",
               background: "#FEF2F2",
               color: "#DC2626",
@@ -222,33 +186,9 @@ function ReviewDetailModal({
               opacity: processing === review.id ? 0.7 : 1,
             }}
           >
-            {processing === review.id
-              ? "⏳ Memproses..."
-              : "❌ Tolak Review Ini"}
+            {processing === review.id ? "⏳ Memproses..." : "🗑️ Hapus Review"}
           </button>
-        )}
-        {review.status === "REJECTED" && (
-          <button
-            onClick={() => void onApprove(review.id)}
-            disabled={processing === review.id}
-            style={{
-              width: "100%",
-              padding: "11px",
-              background: "#10B981",
-              color: "#fff",
-              border: "none",
-              borderRadius: 8,
-              fontWeight: 700,
-              fontSize: 14,
-              cursor: processing === review.id ? "not-allowed" : "pointer",
-              opacity: processing === review.id ? 0.7 : 1,
-            }}
-          >
-            {processing === review.id
-              ? "⏳ Memproses..."
-              : "✅ Setujui Review Ini"}
-          </button>
-        )}
+        </div>
       </div>
     </Modal>
   );
@@ -261,7 +201,7 @@ export default function AdminReviewsPage() {
   const [reviews, setReviews] = useState<Review[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [filterStatus, setFilterStatus] = useState<string>("");
+  const [filterApproved, setFilterApproved] = useState<string>("");
 
   const [detailModal, setDetailModal] = useState(false);
   const [selectedReview, setSelectedReview] = useState<Review | null>(null);
@@ -281,15 +221,21 @@ export default function AdminReviewsPage() {
     setLoading(true);
     setError(null);
     try {
-      const params = filterStatus ? `?status=${filterStatus}` : "";
-      const res = await api.get<{ data: Review[] }>(`/admin/reviews${params}`);
+      const params = new URLSearchParams();
+      if (filterApproved !== "") params.set("is_approved", filterApproved);
+      params.set("limit", "50");
+
+      const res = await api.get<{
+        data: Review[];
+        pagination: { total: number };
+      }>(`/admin/reviews?${params.toString()}`);
       setReviews(res.data.data);
     } catch {
       setError("Gagal memuat data review");
     } finally {
       setLoading(false);
     }
-  }, [filterStatus]);
+  }, [filterApproved]);
 
   useEffect(() => {
     void fetchReviews();
@@ -300,14 +246,14 @@ export default function AdminReviewsPage() {
     try {
       await api.patch(`/admin/reviews/${id}/approve`);
       setReviews((prev) =>
-        prev.map((r) => (r.id === id ? { ...r, status: "APPROVED" } : r)),
+        prev.map((r) => (r.id === id ? { ...r, is_approved: true } : r)),
       );
       if (selectedReview?.id === id) {
         setSelectedReview((prev) =>
-          prev ? { ...prev, status: "APPROVED" } : null,
+          prev ? { ...prev, is_approved: true } : null,
         );
       }
-      showToast("Review disetujui");
+      showToast("Review berhasil disetujui");
     } catch {
       showToast("Gagal menyetujui review", "error");
     } finally {
@@ -315,38 +261,25 @@ export default function AdminReviewsPage() {
     }
   };
 
-  const handleReject = async (id: string) => {
+  const handleDelete = async (id: string) => {
+    if (!confirm("Hapus review ini secara permanen?")) return;
     setProcessing(id);
     try {
-      await api.patch(`/admin/reviews/${id}/reject`);
-      setReviews((prev) =>
-        prev.map((r) => (r.id === id ? { ...r, status: "REJECTED" } : r)),
-      );
+      await api.delete(`/admin/reviews/${id}`);
+      setReviews((prev) => prev.filter((r) => r.id !== id));
       if (selectedReview?.id === id) {
-        setSelectedReview((prev) =>
-          prev ? { ...prev, status: "REJECTED" } : null,
-        );
+        setDetailModal(false);
+        setSelectedReview(null);
       }
-      showToast("Review ditolak");
+      showToast("Review berhasil dihapus");
     } catch {
-      showToast("Gagal menolak review", "error");
+      showToast("Gagal menghapus review", "error");
     } finally {
       setProcessing(null);
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm("Hapus review ini secara permanen?")) return;
-    try {
-      await api.delete(`/admin/reviews/${id}`);
-      setReviews((prev) => prev.filter((r) => r.id !== id));
-      showToast("Review dihapus");
-    } catch {
-      showToast("Gagal menghapus review", "error");
-    }
-  };
-
-  const pendingCount = reviews.filter((r) => r.status === "PENDING").length;
+  const pendingCount = reviews.filter((r) => !r.is_approved).length;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
@@ -408,8 +341,8 @@ export default function AdminReviewsPage() {
 
         {/* Filter */}
         <select
-          value={filterStatus}
-          onChange={(e) => setFilterStatus(e.target.value)}
+          value={filterApproved}
+          onChange={(e) => setFilterApproved(e.target.value)}
           style={{
             padding: "9px 12px",
             border: "1px solid #E5E7EB",
@@ -479,195 +412,165 @@ export default function AdminReviewsPage() {
           >
             <p style={{ fontSize: 36, marginBottom: 12 }}>⭐</p>
             <p style={{ fontSize: 14 }}>
-              {filterStatus
-                ? "Tidak ada review dengan status ini"
+              {filterApproved !== ""
+                ? "Tidak ada review dengan filter ini"
                 : "Belum ada review masuk"}
             </p>
           </div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column" }}>
-            {reviews.map((review) => {
-              const cfg = STATUS_STYLE[review.status];
-              return (
-                <div
-                  key={review.id}
-                  style={{
-                    padding: "16px 20px",
-                    borderBottom: "1px solid #F3F4F6",
-                    display: "flex",
-                    gap: 16,
-                    alignItems: "flex-start",
-                  }}
-                >
-                  {/* Left: info */}
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 10,
-                        flexWrap: "wrap",
-                        marginBottom: 6,
-                      }}
-                    >
-                      <p
-                        style={{
-                          fontWeight: 700,
-                          fontSize: 14,
-                          color: "#111827",
-                        }}
-                      >
-                        {review.customer_name}
-                      </p>
-                      <StarRating rating={review.rating} />
-                      <span
-                        style={{
-                          padding: "2px 8px",
-                          borderRadius: 99,
-                          fontSize: 11,
-                          fontWeight: 700,
-                          color: cfg.color,
-                          background: cfg.bg,
-                        }}
-                      >
-                        {cfg.label}
-                      </span>
-                    </div>
-
-                    <p
-                      style={{
-                        fontSize: 13,
-                        color: "#6B7280",
-                        marginBottom: 4,
-                      }}
-                    >
-                      Produk:{" "}
-                      <strong style={{ color: "#374151" }}>
-                        {review.product_name}
-                      </strong>
-                      {" · "}
-                      <span
-                        style={{
-                          fontFamily: "monospace",
-                          color: "#3B82F6",
-                          fontSize: 12,
-                        }}
-                      >
-                        {review.order_code}
-                      </span>
-                    </p>
-
-                    <p
-                      style={{
-                        fontSize: 14,
-                        color: "#374151",
-                        lineHeight: 1.6,
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        display: "-webkit-box",
-                        WebkitLineClamp: 2,
-                        WebkitBoxOrient: "vertical",
-                      }}
-                    >
-                      {review.content}
-                    </p>
-
-                    <p style={{ fontSize: 12, color: "#9CA3AF", marginTop: 6 }}>
-                      {formatDate(review.created_at)}
-                    </p>
-                  </div>
-
-                  {/* Right: actions */}
+            {reviews.map((review) => (
+              <div
+                key={review.id}
+                style={{
+                  padding: "16px 20px",
+                  borderBottom: "1px solid #F3F4F6",
+                  display: "flex",
+                  gap: 16,
+                  alignItems: "flex-start",
+                }}
+              >
+                {/* Left: info */}
+                <div style={{ flex: 1, minWidth: 0 }}>
                   <div
                     style={{
                       display: "flex",
-                      flexDirection: "column",
-                      gap: 6,
-                      flexShrink: 0,
+                      alignItems: "center",
+                      gap: 10,
+                      flexWrap: "wrap",
+                      marginBottom: 6,
                     }}
                   >
-                    <button
-                      onClick={() => {
-                        setSelectedReview(review);
-                        setDetailModal(true);
-                      }}
+                    <p
                       style={{
-                        padding: "6px 12px",
-                        background: "#EFF6FF",
-                        color: "#3B82F6",
-                        border: "1px solid #BFDBFE",
-                        borderRadius: 6,
-                        fontSize: 12,
-                        fontWeight: 600,
-                        cursor: "pointer",
-                        whiteSpace: "nowrap",
+                        fontWeight: 700,
+                        fontSize: 14,
+                        color: "#111827",
                       }}
                     >
-                      👁️ Detail
-                    </button>
-                    {review.status === "PENDING" && (
-                      <>
-                        <button
-                          onClick={() => void handleApprove(review.id)}
-                          disabled={processing === review.id}
-                          style={{
-                            padding: "6px 12px",
-                            background: "#D1FAE5",
-                            color: "#065F46",
-                            border: "1px solid #6EE7B7",
-                            borderRadius: 6,
-                            fontSize: 12,
-                            fontWeight: 600,
-                            cursor:
-                              processing === review.id
-                                ? "not-allowed"
-                                : "pointer",
-                            opacity: processing === review.id ? 0.6 : 1,
-                          }}
-                        >
-                          ✅ Setujui
-                        </button>
-                        <button
-                          onClick={() => void handleReject(review.id)}
-                          disabled={processing === review.id}
-                          style={{
-                            padding: "6px 12px",
-                            background: "#FEF2F2",
-                            color: "#DC2626",
-                            border: "1px solid #FCA5A5",
-                            borderRadius: 6,
-                            fontSize: 12,
-                            fontWeight: 600,
-                            cursor:
-                              processing === review.id
-                                ? "not-allowed"
-                                : "pointer",
-                            opacity: processing === review.id ? 0.6 : 1,
-                          }}
-                        >
-                          ❌ Tolak
-                        </button>
-                      </>
-                    )}
-                    <button
-                      onClick={() => void handleDelete(review.id)}
+                      {review.customer_name}
+                    </p>
+                    <StarRating rating={review.rating} />
+                    <span
                       style={{
-                        padding: "6px 12px",
-                        background: "transparent",
-                        color: "#9CA3AF",
-                        border: "1px solid #E5E7EB",
-                        borderRadius: 6,
-                        fontSize: 12,
-                        fontWeight: 600,
-                        cursor: "pointer",
+                        padding: "2px 8px",
+                        borderRadius: 99,
+                        fontSize: 11,
+                        fontWeight: 700,
+                        color: review.is_approved ? "#065F46" : "#92400E",
+                        background: review.is_approved ? "#D1FAE5" : "#FEF3C7",
                       }}
                     >
-                      🗑️ Hapus
-                    </button>
+                      {review.is_approved ? "Disetujui" : "Menunggu"}
+                    </span>
                   </div>
+
+                  <p
+                    style={{
+                      fontSize: 13,
+                      color: "#6B7280",
+                      marginBottom: 4,
+                    }}
+                  >
+                    Produk:{" "}
+                    <strong style={{ color: "#374151" }}>
+                      {review.product_name}
+                    </strong>
+                  </p>
+
+                  <p
+                    style={{
+                      fontSize: 14,
+                      color: "#374151",
+                      lineHeight: 1.6,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      display: "-webkit-box",
+                      WebkitLineClamp: 2,
+                      WebkitBoxOrient: "vertical",
+                    }}
+                  >
+                    {review.comment ?? (
+                      <span style={{ color: "#9CA3AF", fontStyle: "italic" }}>
+                        Tidak ada komentar
+                      </span>
+                    )}
+                  </p>
+
+                  <p style={{ fontSize: 12, color: "#9CA3AF", marginTop: 6 }}>
+                    {formatDate(review.created_at)}
+                  </p>
                 </div>
-              );
-            })}
+
+                {/* Right: actions */}
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 6,
+                    flexShrink: 0,
+                  }}
+                >
+                  <button
+                    onClick={() => {
+                      setSelectedReview(review);
+                      setDetailModal(true);
+                    }}
+                    style={{
+                      padding: "6px 12px",
+                      background: "#EFF6FF",
+                      color: "#3B82F6",
+                      border: "1px solid #BFDBFE",
+                      borderRadius: 6,
+                      fontSize: 12,
+                      fontWeight: 600,
+                      cursor: "pointer",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    👁️ Detail
+                  </button>
+                  {!review.is_approved && (
+                    <button
+                      onClick={() => void handleApprove(review.id)}
+                      disabled={processing === review.id}
+                      style={{
+                        padding: "6px 12px",
+                        background: "#D1FAE5",
+                        color: "#065F46",
+                        border: "1px solid #6EE7B7",
+                        borderRadius: 6,
+                        fontSize: 12,
+                        fontWeight: 600,
+                        cursor:
+                          processing === review.id ? "not-allowed" : "pointer",
+                        opacity: processing === review.id ? 0.6 : 1,
+                      }}
+                    >
+                      ✅ Setujui
+                    </button>
+                  )}
+                  <button
+                    onClick={() => void handleDelete(review.id)}
+                    disabled={processing === review.id}
+                    style={{
+                      padding: "6px 12px",
+                      background: "#FEF2F2",
+                      color: "#EF4444",
+                      border: "1px solid #FCA5A5",
+                      borderRadius: 6,
+                      fontSize: 12,
+                      fontWeight: 600,
+                      cursor:
+                        processing === review.id ? "not-allowed" : "pointer",
+                      opacity: processing === review.id ? 0.6 : 1,
+                    }}
+                  >
+                    🗑️ Hapus
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </div>
@@ -681,7 +584,7 @@ export default function AdminReviewsPage() {
         }}
         review={selectedReview}
         onApprove={handleApprove}
-        onReject={handleReject}
+        onDelete={handleDelete}
         processing={processing}
       />
     </div>

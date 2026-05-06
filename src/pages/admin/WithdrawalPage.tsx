@@ -3,36 +3,38 @@ import api from "@/services/axios.config";
 import Modal from "@/components/common/Modal";
 
 // ==========================================
-// TYPES
+// TYPES (sesuai backend aktual)
 // ==========================================
-type WithdrawalStatus = "PENDING" | "APPROVED" | "REJECTED" | "COMPLETED";
-
 interface BankAccount {
   id: string;
   bank_name: string;
   account_number: string;
   account_name: string;
-  is_primary: boolean;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
 }
 
-interface WithdrawalRequest {
+interface WithdrawalHistory {
   id: string;
-  amount: number;
   bank_account_id: string;
   bank_name: string;
   account_number: string;
   account_name: string;
-  status: WithdrawalStatus;
+  amount: number;
+  status: "PENDING" | "SUCCESS" | "FAILED";
+  tripay_ref: string | null;
   notes: string | null;
   requested_at: string;
   processed_at: string | null;
 }
 
-interface WithdrawalSummary {
-  total_revenue: number;
-  total_withdrawn: number;
-  pending_withdrawal: number;
-  available_balance: number;
+interface WithdrawalSettings {
+  id: string;
+  withdrawal_date: number;
+  minimum_amount: number;
+  is_auto: boolean;
+  notification_email: string | null;
 }
 
 // ==========================================
@@ -57,35 +59,14 @@ const formatDate = (dateStr: string | null) => {
 };
 
 const STATUS_STYLE: Record<
-  WithdrawalStatus,
+  "PENDING" | "SUCCESS" | "FAILED",
   { label: string; color: string; bg: string }
 > = {
   PENDING: { label: "Menunggu", color: "#92400E", bg: "#FEF3C7" },
-  APPROVED: { label: "Disetujui", color: "#1D4ED8", bg: "#DBEAFE" },
-  REJECTED: { label: "Ditolak", color: "#991B1B", bg: "#FEE2E2" },
-  COMPLETED: { label: "Selesai", color: "#065F46", bg: "#D1FAE5" },
+  SUCCESS: { label: "Berhasil", color: "#065F46", bg: "#D1FAE5" },
+  FAILED: { label: "Gagal", color: "#991B1B", bg: "#FEE2E2" },
 };
 
-const BANKS = [
-  "BCA",
-  "BNI",
-  "BRI",
-  "Mandiri",
-  "CIMB Niaga",
-  "Danamon",
-  "Permata",
-  "BTN",
-  "Muamalat",
-  "BSI",
-  "Jenius",
-  "GoPay",
-  "OVO",
-  "DANA",
-];
-
-// ==========================================
-// SHARED STYLES
-// ==========================================
 const inputStyle: React.CSSProperties = {
   width: "100%",
   padding: "9px 12px",
@@ -110,10 +91,12 @@ const labelStyle: React.CSSProperties = {
 function Field({
   label,
   required,
+  hint,
   children,
 }: {
   label: string;
   required?: boolean;
+  hint?: string;
   children: React.ReactNode;
 }) {
   return (
@@ -122,6 +105,9 @@ function Field({
         {label} {required && <span style={{ color: "#EF4444" }}>*</span>}
       </label>
       {children}
+      {hint && (
+        <p style={{ fontSize: 12, color: "#9CA3AF", marginTop: 4 }}>{hint}</p>
+      )}
     </div>
   );
 }
@@ -144,7 +130,7 @@ function BankAccountModal({
     bank_name: "",
     account_number: "",
     account_name: "",
-    is_primary: false,
+    is_active: false,
   });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -155,14 +141,14 @@ function BankAccountModal({
         bank_name: editAccount.bank_name,
         account_number: editAccount.account_number,
         account_name: editAccount.account_name,
-        is_primary: editAccount.is_primary,
+        is_active: editAccount.is_active,
       });
     } else {
       setForm({
         bank_name: "",
         account_number: "",
         account_name: "",
-        is_primary: false,
+        is_active: false,
       });
     }
     setError(null);
@@ -176,12 +162,9 @@ function BankAccountModal({
     setSubmitting(true);
     try {
       if (editAccount) {
-        await api.put(
-          `/admin/withdrawal/bank-accounts/${editAccount.id}`,
-          form,
-        );
+        await api.put(`/admin/bank-accounts/${editAccount.id}`, form);
       } else {
-        await api.post("/admin/withdrawal/bank-accounts", form);
+        await api.post("/admin/bank-accounts", form);
       }
       onSuccess();
       onClose();
@@ -205,31 +188,22 @@ function BankAccountModal({
         onSubmit={(e) => void handleSubmit(e)}
         style={{ display: "flex", flexDirection: "column", gap: 14 }}
       >
-        <Field label="Bank" required>
-          <select
+        <Field label="Nama Bank" required>
+          <input
             style={inputStyle}
             value={form.bank_name}
             onChange={(e) =>
               setForm((p) => ({ ...p, bank_name: e.target.value }))
             }
+            placeholder="BCA, BNI, BRI, Mandiri..."
             required
-          >
-            <option value="">-- Pilih Bank --</option>
-            {BANKS.map((b) => (
-              <option key={b} value={b}>
-                {b}
-              </option>
-            ))}
-          </select>
+            onFocus={(e) => (e.currentTarget.style.borderColor = "#3B82F6")}
+            onBlur={(e) => (e.currentTarget.style.borderColor = "#E5E7EB")}
+          />
         </Field>
         <Field label="Nomor Rekening" required>
           <input
-            style={{
-              ...inputStyle,
-              fontFamily: "monospace",
-              fontSize: 15,
-              letterSpacing: "0.05em",
-            }}
+            style={{ ...inputStyle, fontFamily: "monospace", fontSize: 15 }}
             type="text"
             value={form.account_number}
             onChange={(e) =>
@@ -247,7 +221,6 @@ function BankAccountModal({
         <Field label="Nama Pemilik Rekening" required>
           <input
             style={inputStyle}
-            type="text"
             value={form.account_name}
             onChange={(e) =>
               setForm((p) => ({ ...p, account_name: e.target.value }))
@@ -268,14 +241,14 @@ function BankAccountModal({
         >
           <input
             type="checkbox"
-            checked={form.is_primary}
+            checked={form.is_active}
             onChange={(e) =>
-              setForm((p) => ({ ...p, is_primary: e.target.checked }))
+              setForm((p) => ({ ...p, is_active: e.target.checked }))
             }
             style={{ width: 16, height: 16 }}
           />
           <span style={{ fontSize: 14, fontWeight: 600, color: "#374151" }}>
-            Jadikan rekening utama
+            Jadikan rekening aktif (hanya satu yang bisa aktif)
           </span>
         </label>
         {error && (
@@ -292,7 +265,7 @@ function BankAccountModal({
             ❌ {error}
           </div>
         )}
-        <div style={{ display: "flex", gap: 10, paddingTop: 4 }}>
+        <div style={{ display: "flex", gap: 10 }}>
           <button
             type="button"
             onClick={onClose}
@@ -345,45 +318,38 @@ function BankAccountModal({
 function RequestWithdrawalModal({
   isOpen,
   onClose,
-  accounts,
-  availableBalance,
+  activeAccount,
+  settings,
   onSuccess,
 }: {
   isOpen: boolean;
   onClose: () => void;
-  accounts: BankAccount[];
-  availableBalance: number;
+  activeAccount: BankAccount | null;
+  settings: WithdrawalSettings | null;
   onSuccess: () => void;
 }) {
-  const primaryAccount = accounts.find((a) => a.is_primary);
-  const [form, setForm] = useState({
-    amount: "",
-    bank_account_id: primaryAccount?.id ?? "",
-  });
+  const [amount, setAmount] = useState("");
+  const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const primary = accounts.find((a) => a.is_primary);
-    setForm({
-      amount: "",
-      bank_account_id: primary?.id ?? accounts[0]?.id ?? "",
-    });
+    setAmount("");
+    setNotes("");
     setError(null);
-  }, [accounts, isOpen]);
+  }, [isOpen]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const amount = Number(form.amount);
-    if (!amount || amount <= 0) return setError("Masukkan jumlah yang valid");
-    if (amount > availableBalance)
-      return setError("Jumlah melebihi saldo tersedia");
-    if (!form.bank_account_id) return setError("Pilih rekening tujuan");
+    const amt = Number(amount);
+    if (!amt || amt <= 0) return setError("Masukkan jumlah yang valid");
+    if (!activeAccount) return setError("Tidak ada rekening aktif");
     setSubmitting(true);
     try {
       await api.post("/admin/withdrawal/request", {
-        amount,
-        bank_account_id: form.bank_account_id,
+        amount: amt,
+        bank_account_id: activeAccount.id,
+        notes: notes.trim() || undefined,
       });
       onSuccess();
       onClose();
@@ -407,94 +373,88 @@ function RequestWithdrawalModal({
         onSubmit={(e) => void handleSubmit(e)}
         style={{ display: "flex", flexDirection: "column", gap: 16 }}
       >
-        <div
-          style={{
-            background: "#EFF6FF",
-            border: "1px solid #BFDBFE",
-            borderRadius: 8,
-            padding: "14px 16px",
-          }}
-        >
-          <p style={{ fontSize: 13, color: "#1D4ED8", marginBottom: 4 }}>
-            Saldo Tersedia
-          </p>
-          <p style={{ fontSize: 24, fontWeight: 800, color: "#1D4ED8" }}>
-            {formatRupiah(availableBalance)}
-          </p>
-        </div>
+        {!activeAccount ? (
+          <div
+            style={{
+              background: "#FEF3C7",
+              border: "1px solid #FCD34D",
+              borderRadius: 8,
+              padding: "14px 16px",
+              fontSize: 14,
+              color: "#92400E",
+            }}
+          >
+            ⚠️ Belum ada rekening aktif. Tambah dan aktifkan rekening terlebih
+            dahulu.
+          </div>
+        ) : (
+          <div
+            style={{
+              background: "#F9FAFB",
+              border: "1px solid #E5E7EB",
+              borderRadius: 8,
+              padding: "14px 16px",
+            }}
+          >
+            <p style={{ fontSize: 13, color: "#6B7280", marginBottom: 4 }}>
+              Rekening Tujuan
+            </p>
+            <p style={{ fontWeight: 700, fontSize: 14 }}>
+              {activeAccount.bank_name}
+            </p>
+            <p
+              style={{
+                fontSize: 13,
+                color: "#6B7280",
+                fontFamily: "monospace",
+              }}
+            >
+              {activeAccount.account_number} · {activeAccount.account_name}
+            </p>
+          </div>
+        )}
+
+        {settings && (
+          <div
+            style={{
+              background: "#EFF6FF",
+              border: "1px solid #BFDBFE",
+              borderRadius: 8,
+              padding: "12px 14px",
+              fontSize: 13,
+              color: "#1D4ED8",
+            }}
+          >
+            ℹ️ Penarikan hanya bisa dilakukan pada tanggal{" "}
+            <strong>{settings.withdrawal_date}</strong> setiap bulan.
+            {settings.minimum_amount > 0 &&
+              ` Minimum: ${formatRupiah(settings.minimum_amount)}.`}
+          </div>
+        )}
 
         <Field label="Jumlah Penarikan (Rp)" required>
           <input
             style={{ ...inputStyle, fontFamily: "monospace", fontSize: 15 }}
             type="number"
-            min={1}
-            max={availableBalance}
-            value={form.amount}
-            onChange={(e) => setForm((p) => ({ ...p, amount: e.target.value }))}
+            min={settings?.minimum_amount ?? 1}
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
             placeholder="500000"
             required
             onFocus={(e) => (e.currentTarget.style.borderColor = "#3B82F6")}
             onBlur={(e) => (e.currentTarget.style.borderColor = "#E5E7EB")}
           />
-          <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
-            {[25, 50, 75, 100].map((pct) => (
-              <button
-                key={pct}
-                type="button"
-                onClick={() =>
-                  setForm((p) => ({
-                    ...p,
-                    amount: String(Math.floor((availableBalance * pct) / 100)),
-                  }))
-                }
-                style={{
-                  padding: "4px 10px",
-                  background: "#F3F4F6",
-                  border: "1px solid #E5E7EB",
-                  borderRadius: 6,
-                  fontSize: 12,
-                  fontWeight: 600,
-                  color: "#374151",
-                  cursor: "pointer",
-                }}
-              >
-                {pct}%
-              </button>
-            ))}
-          </div>
         </Field>
 
-        <Field label="Rekening Tujuan" required>
-          {accounts.length === 0 ? (
-            <div
-              style={{
-                background: "#FEF3C7",
-                border: "1px solid #FCD34D",
-                borderRadius: 8,
-                padding: "10px 12px",
-                fontSize: 13,
-                color: "#92400E",
-              }}
-            >
-              ⚠️ Belum ada rekening terdaftar. Tambah rekening terlebih dahulu.
-            </div>
-          ) : (
-            <select
-              style={inputStyle}
-              value={form.bank_account_id}
-              onChange={(e) =>
-                setForm((p) => ({ ...p, bank_account_id: e.target.value }))
-              }
-              required
-            >
-              {accounts.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.bank_name} — {a.account_number} ({a.account_name})
-                  {a.is_primary ? " ★" : ""}
-                </option>
-              ))}
-            </select>
-          )}
+        <Field label="Catatan (opsional)">
+          <textarea
+            style={{ ...inputStyle, minHeight: 60, resize: "vertical" }}
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            placeholder="Keterangan tambahan..."
+            onFocus={(e) => (e.currentTarget.style.borderColor = "#3B82F6")}
+            onBlur={(e) => (e.currentTarget.style.borderColor = "#E5E7EB")}
+          />
         </Field>
 
         {error && (
@@ -512,7 +472,7 @@ function RequestWithdrawalModal({
           </div>
         )}
 
-        <div style={{ display: "flex", gap: 10, paddingTop: 4 }}>
+        <div style={{ display: "flex", gap: 10 }}>
           <button
             type="button"
             onClick={onClose}
@@ -533,7 +493,7 @@ function RequestWithdrawalModal({
           </button>
           <button
             type="submit"
-            disabled={submitting || accounts.length === 0}
+            disabled={submitting || !activeAccount}
             style={{
               flex: 2,
               padding: "11px",
@@ -543,9 +503,8 @@ function RequestWithdrawalModal({
               borderRadius: 8,
               fontWeight: 700,
               fontSize: 14,
-              cursor:
-                submitting || accounts.length === 0 ? "not-allowed" : "pointer",
-              opacity: submitting || accounts.length === 0 ? 0.7 : 1,
+              cursor: submitting || !activeAccount ? "not-allowed" : "pointer",
+              opacity: submitting || !activeAccount ? 0.7 : 1,
             }}
           >
             {submitting ? "⏳ Memproses..." : "💸 Request Penarikan"}
@@ -557,15 +516,164 @@ function RequestWithdrawalModal({
 }
 
 // ==========================================
+// WITHDRAWAL SETTINGS FORM
+// ==========================================
+function WithdrawalSettingsForm({
+  settings,
+  onSuccess,
+}: {
+  settings: WithdrawalSettings | null;
+  onSuccess: () => void;
+}) {
+  const [form, setForm] = useState({
+    withdrawal_date: settings?.withdrawal_date ?? 1,
+    minimum_amount: settings?.minimum_amount ?? 0,
+    is_auto: settings?.is_auto ?? false,
+    notification_email: settings?.notification_email ?? "",
+  });
+  const [saving, setSaving] = useState(false);
+  const [alert, setAlert] = useState<{
+    type: "success" | "error";
+    msg: string;
+  } | null>(null);
+
+  useEffect(() => {
+    if (settings) {
+      setForm({
+        withdrawal_date: settings.withdrawal_date,
+        minimum_amount: settings.minimum_amount,
+        is_auto: settings.is_auto,
+        notification_email: settings.notification_email ?? "",
+      });
+    }
+  }, [settings]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    setAlert(null);
+    try {
+      await api.put("/admin/withdrawal/settings", {
+        withdrawal_date: form.withdrawal_date,
+        minimum_amount: form.minimum_amount,
+        is_auto: form.is_auto,
+        notification_email: form.notification_email || undefined,
+      });
+      setAlert({ type: "success", msg: "Pengaturan berhasil disimpan" });
+      onSuccess();
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { message?: string } } };
+      setAlert({
+        type: "error",
+        msg: e.response?.data?.message ?? "Gagal menyimpan",
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <form
+      onSubmit={(e) => void handleSubmit(e)}
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: 14,
+        maxWidth: 480,
+      }}
+    >
+      {alert && (
+        <div
+          style={{
+            background: alert.type === "success" ? "#ECFDF5" : "#FEF2F2",
+            border: `1px solid ${alert.type === "success" ? "#6EE7B7" : "#FCA5A5"}`,
+            borderRadius: 8,
+            padding: "10px 14px",
+            color: alert.type === "success" ? "#065F46" : "#DC2626",
+            fontSize: 13,
+          }}
+        >
+          {alert.type === "success" ? "✅" : "❌"} {alert.msg}
+        </div>
+      )}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <Field label="Tanggal Penarikan" hint="Tanggal 1-28 setiap bulan">
+          <input
+            type="number"
+            min={1}
+            max={28}
+            style={inputStyle}
+            value={form.withdrawal_date}
+            onChange={(e) =>
+              setForm((p) => ({
+                ...p,
+                withdrawal_date: Number(e.target.value),
+              }))
+            }
+            onFocus={(e) => (e.currentTarget.style.borderColor = "#3B82F6")}
+            onBlur={(e) => (e.currentTarget.style.borderColor = "#E5E7EB")}
+          />
+        </Field>
+        <Field label="Minimum Penarikan (Rp)">
+          <input
+            type="number"
+            min={0}
+            style={inputStyle}
+            value={form.minimum_amount}
+            onChange={(e) =>
+              setForm((p) => ({ ...p, minimum_amount: Number(e.target.value) }))
+            }
+            onFocus={(e) => (e.currentTarget.style.borderColor = "#3B82F6")}
+            onBlur={(e) => (e.currentTarget.style.borderColor = "#E5E7EB")}
+          />
+        </Field>
+      </div>
+      <Field label="Email Notifikasi">
+        <input
+          type="email"
+          style={inputStyle}
+          value={form.notification_email}
+          onChange={(e) =>
+            setForm((p) => ({ ...p, notification_email: e.target.value }))
+          }
+          placeholder="admin@example.com"
+          onFocus={(e) => (e.currentTarget.style.borderColor = "#3B82F6")}
+          onBlur={(e) => (e.currentTarget.style.borderColor = "#E5E7EB")}
+        />
+      </Field>
+      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+        <button
+          type="submit"
+          disabled={saving}
+          style={{
+            padding: "9px 20px",
+            background: "#3B82F6",
+            color: "#fff",
+            border: "none",
+            borderRadius: 8,
+            fontWeight: 700,
+            fontSize: 14,
+            cursor: saving ? "not-allowed" : "pointer",
+            opacity: saving ? 0.7 : 1,
+          }}
+        >
+          {saving ? "⏳ Menyimpan..." : "💾 Simpan Pengaturan"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+// ==========================================
 // MAIN PAGE
 // ==========================================
-type TabKey = "overview" | "history" | "accounts";
+type TabKey = "history" | "accounts" | "settings";
 
 export default function AdminWithdrawalPage() {
-  const [activeTab, setActiveTab] = useState<TabKey>("overview");
-  const [summary, setSummary] = useState<WithdrawalSummary | null>(null);
-  const [history, setHistory] = useState<WithdrawalRequest[]>([]);
+  const [activeTab, setActiveTab] = useState<TabKey>("history");
+  const [history, setHistory] = useState<WithdrawalHistory[]>([]);
   const [accounts, setAccounts] = useState<BankAccount[]>([]);
+  const [settings, setSettings] = useState<WithdrawalSettings | null>(null);
   const [loading, setLoading] = useState(true);
 
   const [bankModal, setBankModal] = useState(false);
@@ -585,14 +693,14 @@ export default function AdminWithdrawalPage() {
   const fetchAll = useCallback(async () => {
     setLoading(true);
     try {
-      const [summaryRes, historyRes, accountsRes] = await Promise.all([
-        api.get<{ data: WithdrawalSummary }>("/admin/withdrawal/summary"),
-        api.get<{ data: WithdrawalRequest[] }>("/admin/withdrawal/history"),
-        api.get<{ data: BankAccount[] }>("/admin/withdrawal/bank-accounts"),
+      const [historyRes, accountsRes, settingsRes] = await Promise.all([
+        api.get<{ data: WithdrawalHistory[] }>("/admin/withdrawal/history"),
+        api.get<{ data: BankAccount[] }>("/admin/bank-accounts"),
+        api.get<{ data: WithdrawalSettings }>("/admin/withdrawal/settings"),
       ]);
-      setSummary(summaryRes.data.data);
       setHistory(historyRes.data.data);
       setAccounts(accountsRes.data.data);
+      setSettings(settingsRes.data.data);
     } catch {
       /* noop */
     } finally {
@@ -604,33 +712,39 @@ export default function AdminWithdrawalPage() {
     void fetchAll();
   }, [fetchAll]);
 
+  const handleActivateAccount = async (id: string) => {
+    try {
+      await api.patch(`/admin/bank-accounts/${id}/activate`);
+      setAccounts((prev) =>
+        prev.map((a) => ({ ...a, is_active: a.id === id })),
+      );
+      showToast("Rekening diaktifkan");
+    } catch {
+      showToast("Gagal mengaktifkan rekening", "error");
+    }
+  };
+
   const handleDeleteAccount = async (id: string) => {
     if (!confirm("Hapus rekening ini?")) return;
     try {
-      await api.delete(`/admin/withdrawal/bank-accounts/${id}`);
+      await api.delete(`/admin/bank-accounts/${id}`);
       setAccounts((prev) => prev.filter((a) => a.id !== id));
       showToast("Rekening dihapus");
-    } catch {
-      showToast("Gagal menghapus rekening", "error");
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { message?: string } } };
+      showToast(
+        e.response?.data?.message ?? "Gagal menghapus rekening",
+        "error",
+      );
     }
   };
 
-  const handleSetPrimary = async (id: string) => {
-    try {
-      await api.patch(`/admin/withdrawal/bank-accounts/${id}/primary`);
-      setAccounts((prev) =>
-        prev.map((a) => ({ ...a, is_primary: a.id === id })),
-      );
-      showToast("Rekening utama diperbarui");
-    } catch {
-      showToast("Gagal mengubah rekening utama", "error");
-    }
-  };
+  const activeAccount = accounts.find((a) => a.is_active) ?? null;
 
   const TABS: { key: TabKey; label: string; icon: string }[] = [
-    { key: "overview", label: "Overview", icon: "📊" },
     { key: "history", label: "Riwayat Penarikan", icon: "📋" },
     { key: "accounts", label: "Rekening Bank", icon: "🏦" },
+    { key: "settings", label: "Pengaturan", icon: "⚙️" },
   ];
 
   return (
@@ -672,20 +786,28 @@ export default function AdminWithdrawalPage() {
             Penarikan Dana
           </h2>
           <p style={{ fontSize: 14, color: "#6B7280", marginTop: 2 }}>
-            Kelola saldo dan request penarikan dana
+            Rekening aktif:{" "}
+            {activeAccount ? (
+              <strong style={{ color: "#111827" }}>
+                {activeAccount.bank_name} · {activeAccount.account_number}
+              </strong>
+            ) : (
+              <span style={{ color: "#EF4444" }}>Belum ada</span>
+            )}
           </p>
         </div>
         <button
           onClick={() => setWithdrawModal(true)}
+          disabled={!activeAccount}
           style={{
             padding: "9px 18px",
-            background: "#10B981",
-            color: "#fff",
+            background: activeAccount ? "#10B981" : "#E5E7EB",
+            color: activeAccount ? "#fff" : "#9CA3AF",
             border: "none",
             borderRadius: 8,
             fontWeight: 700,
             fontSize: 14,
-            cursor: "pointer",
+            cursor: activeAccount ? "pointer" : "not-allowed",
             display: "flex",
             alignItems: "center",
             gap: 6,
@@ -756,128 +878,6 @@ export default function AdminWithdrawalPage() {
         </div>
       ) : (
         <>
-          {/* ---- OVERVIEW ---- */}
-          {activeTab === "overview" && summary && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-              {/* Stats */}
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
-                  gap: 16,
-                }}
-              >
-                {[
-                  {
-                    label: "Total Pendapatan",
-                    value: formatRupiah(summary.total_revenue),
-                    color: "#10B981",
-                    icon: "💰",
-                  },
-                  {
-                    label: "Total Ditarik",
-                    value: formatRupiah(summary.total_withdrawn),
-                    color: "#6B7280",
-                    icon: "📤",
-                  },
-                  {
-                    label: "Dalam Proses",
-                    value: formatRupiah(summary.pending_withdrawal),
-                    color: "#F59E0B",
-                    icon: "⏳",
-                  },
-                  {
-                    label: "Saldo Tersedia",
-                    value: formatRupiah(summary.available_balance),
-                    color: "#3B82F6",
-                    icon: "✅",
-                  },
-                ].map((stat) => (
-                  <div
-                    key={stat.label}
-                    style={{
-                      background: "#fff",
-                      border: "1px solid #E5E7EB",
-                      borderRadius: 12,
-                      padding: "20px 24px",
-                    }}
-                  >
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 10,
-                        marginBottom: 8,
-                      }}
-                    >
-                      <span style={{ fontSize: 20 }}>{stat.icon}</span>
-                      <p style={{ fontSize: 13, color: "#6B7280" }}>
-                        {stat.label}
-                      </p>
-                    </div>
-                    <p
-                      style={{
-                        fontSize: 22,
-                        fontWeight: 800,
-                        color: stat.color,
-                      }}
-                    >
-                      {stat.value}
-                    </p>
-                  </div>
-                ))}
-              </div>
-
-              {/* CTA */}
-              {summary.available_balance > 0 && (
-                <div
-                  style={{
-                    background: "#F0FDF4",
-                    border: "1px solid #86EFAC",
-                    borderRadius: 12,
-                    padding: "20px 24px",
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    flexWrap: "wrap",
-                    gap: 12,
-                  }}
-                >
-                  <div>
-                    <p
-                      style={{
-                        fontWeight: 700,
-                        fontSize: 15,
-                        color: "#065F46",
-                      }}
-                    >
-                      Saldo siap ditarik
-                    </p>
-                    <p style={{ fontSize: 14, color: "#059669" }}>
-                      {formatRupiah(summary.available_balance)} tersedia untuk
-                      penarikan
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => setWithdrawModal(true)}
-                    style={{
-                      padding: "10px 20px",
-                      background: "#10B981",
-                      color: "#fff",
-                      border: "none",
-                      borderRadius: 8,
-                      fontWeight: 700,
-                      fontSize: 14,
-                      cursor: "pointer",
-                    }}
-                  >
-                    💸 Tarik Sekarang
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-
           {/* ---- HISTORY ---- */}
           {activeTab === "history" && (
             <div
@@ -921,6 +921,7 @@ export default function AdminWithdrawalPage() {
                           "Rekening Tujuan",
                           "Status",
                           "Diproses",
+                          "Ref",
                         ].map((h) => (
                           <th
                             key={h}
@@ -1015,6 +1016,16 @@ export default function AdminWithdrawalPage() {
                             >
                               {formatDate(item.processed_at)}
                             </td>
+                            <td
+                              style={{
+                                padding: "13px 16px",
+                                fontSize: 12,
+                                color: "#6B7280",
+                                fontFamily: "monospace",
+                              }}
+                            >
+                              {item.tripay_ref ?? "-"}
+                            </td>
                           </tr>
                         );
                       })}
@@ -1028,145 +1039,159 @@ export default function AdminWithdrawalPage() {
           {/* ---- ACCOUNTS ---- */}
           {activeTab === "accounts" && (
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              {accounts.map((account) => (
+              {accounts.length === 0 ? (
                 <div
-                  key={account.id}
                   style={{
                     background: "#fff",
-                    border: `1px solid ${account.is_primary ? "#3B82F6" : "#E5E7EB"}`,
+                    border: "1px solid #E5E7EB",
                     borderRadius: 12,
-                    padding: "16px 20px",
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    gap: 12,
+                    padding: "40px",
+                    textAlign: "center",
+                    color: "#9CA3AF",
                   }}
                 >
+                  <p style={{ fontSize: 36, marginBottom: 12 }}>🏦</p>
+                  <p style={{ fontSize: 14 }}>Belum ada rekening terdaftar</p>
+                </div>
+              ) : (
+                accounts.map((account) => (
                   <div
-                    style={{ display: "flex", alignItems: "center", gap: 14 }}
+                    key={account.id}
+                    style={{
+                      background: "#fff",
+                      border: `1px solid ${account.is_active ? "#3B82F6" : "#E5E7EB"}`,
+                      borderRadius: 12,
+                      padding: "16px 20px",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      gap: 12,
+                    }}
                   >
                     <div
-                      style={{
-                        width: 44,
-                        height: 44,
-                        borderRadius: 10,
-                        background: account.is_primary ? "#EFF6FF" : "#F3F4F6",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        fontSize: 20,
-                      }}
+                      style={{ display: "flex", alignItems: "center", gap: 14 }}
                     >
-                      🏦
-                    </div>
-                    <div>
                       <div
                         style={{
+                          width: 44,
+                          height: 44,
+                          borderRadius: 10,
+                          background: account.is_active ? "#EFF6FF" : "#F3F4F6",
                           display: "flex",
                           alignItems: "center",
-                          gap: 8,
+                          justifyContent: "center",
+                          fontSize: 20,
                         }}
                       >
-                        <p
+                        🏦
+                      </div>
+                      <div>
+                        <div
                           style={{
-                            fontWeight: 700,
-                            fontSize: 15,
-                            color: "#111827",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 8,
                           }}
                         >
-                          {account.bank_name}
-                        </p>
-                        {account.is_primary && (
-                          <span
+                          <p
                             style={{
-                              fontSize: 11,
-                              background: "#DBEAFE",
-                              color: "#1D4ED8",
-                              padding: "2px 8px",
-                              borderRadius: 99,
                               fontWeight: 700,
+                              fontSize: 15,
+                              color: "#111827",
                             }}
                           >
-                            ★ Utama
-                          </span>
-                        )}
+                            {account.bank_name}
+                          </p>
+                          {account.is_active && (
+                            <span
+                              style={{
+                                fontSize: 11,
+                                background: "#DBEAFE",
+                                color: "#1D4ED8",
+                                padding: "2px 8px",
+                                borderRadius: 99,
+                                fontWeight: 700,
+                              }}
+                            >
+                              ★ Aktif
+                            </span>
+                          )}
+                        </div>
+                        <p
+                          style={{
+                            fontSize: 13,
+                            color: "#6B7280",
+                            fontFamily: "monospace",
+                          }}
+                        >
+                          {account.account_number}
+                        </p>
+                        <p
+                          style={{
+                            fontSize: 13,
+                            color: "#374151",
+                            fontWeight: 500,
+                          }}
+                        >
+                          {account.account_name}
+                        </p>
                       </div>
-                      <p
-                        style={{
-                          fontSize: 13,
-                          color: "#6B7280",
-                          fontFamily: "monospace",
-                        }}
-                      >
-                        {account.account_number}
-                      </p>
-                      <p
-                        style={{
-                          fontSize: 13,
-                          color: "#374151",
-                          fontWeight: 500,
-                        }}
-                      >
-                        {account.account_name}
-                      </p>
                     </div>
-                  </div>
-
-                  <div style={{ display: "flex", gap: 6 }}>
-                    {!account.is_primary && (
+                    <div style={{ display: "flex", gap: 6 }}>
+                      {!account.is_active && (
+                        <button
+                          onClick={() => void handleActivateAccount(account.id)}
+                          style={{
+                            padding: "6px 12px",
+                            background: "#EFF6FF",
+                            color: "#3B82F6",
+                            border: "1px solid #BFDBFE",
+                            borderRadius: 6,
+                            fontSize: 12,
+                            fontWeight: 600,
+                            cursor: "pointer",
+                          }}
+                        >
+                          ★ Aktifkan
+                        </button>
+                      )}
                       <button
-                        onClick={() => void handleSetPrimary(account.id)}
+                        onClick={() => {
+                          setEditAccount(account);
+                          setBankModal(true);
+                        }}
                         style={{
                           padding: "6px 12px",
-                          background: "#EFF6FF",
-                          color: "#3B82F6",
-                          border: "1px solid #BFDBFE",
+                          background: "#F9FAFB",
+                          color: "#374151",
+                          border: "1px solid #E5E7EB",
                           borderRadius: 6,
                           fontSize: 12,
                           fontWeight: 600,
                           cursor: "pointer",
                         }}
                       >
-                        ★ Utamakan
+                        ✏️ Edit
                       </button>
-                    )}
-                    <button
-                      onClick={() => {
-                        setEditAccount(account);
-                        setBankModal(true);
-                      }}
-                      style={{
-                        padding: "6px 12px",
-                        background: "#F9FAFB",
-                        color: "#374151",
-                        border: "1px solid #E5E7EB",
-                        borderRadius: 6,
-                        fontSize: 12,
-                        fontWeight: 600,
-                        cursor: "pointer",
-                      }}
-                    >
-                      ✏️ Edit
-                    </button>
-                    <button
-                      onClick={() => void handleDeleteAccount(account.id)}
-                      style={{
-                        padding: "6px 12px",
-                        background: "#FEF2F2",
-                        color: "#EF4444",
-                        border: "1px solid #FCA5A5",
-                        borderRadius: 6,
-                        fontSize: 12,
-                        fontWeight: 600,
-                        cursor: "pointer",
-                      }}
-                    >
-                      🗑️
-                    </button>
+                      <button
+                        onClick={() => void handleDeleteAccount(account.id)}
+                        style={{
+                          padding: "6px 12px",
+                          background: "#FEF2F2",
+                          color: "#EF4444",
+                          border: "1px solid #FCA5A5",
+                          borderRadius: 6,
+                          fontSize: 12,
+                          fontWeight: 600,
+                          cursor: "pointer",
+                        }}
+                      >
+                        🗑️
+                      </button>
+                    </div>
                   </div>
-                </div>
-              ))}
-
+                ))
+              )}
               <button
                 onClick={() => {
                   setEditAccount(null);
@@ -1191,6 +1216,36 @@ export default function AdminWithdrawalPage() {
               </button>
             </div>
           )}
+
+          {/* ---- SETTINGS ---- */}
+          {activeTab === "settings" && (
+            <div
+              style={{
+                background: "#fff",
+                border: "1px solid #E5E7EB",
+                borderRadius: 12,
+                overflow: "hidden",
+              }}
+            >
+              <div
+                style={{
+                  padding: "14px 20px",
+                  borderBottom: "1px solid #E5E7EB",
+                  background: "#F9FAFB",
+                }}
+              >
+                <h3 style={{ fontSize: 15, fontWeight: 700, color: "#111827" }}>
+                  ⚙️ Pengaturan Penarikan
+                </h3>
+              </div>
+              <div style={{ padding: "20px" }}>
+                <WithdrawalSettingsForm
+                  settings={settings}
+                  onSuccess={() => void fetchAll()}
+                />
+              </div>
+            </div>
+          )}
         </>
       )}
 
@@ -1207,8 +1262,8 @@ export default function AdminWithdrawalPage() {
       <RequestWithdrawalModal
         isOpen={withdrawModal}
         onClose={() => setWithdrawModal(false)}
-        accounts={accounts}
-        availableBalance={summary?.available_balance ?? 0}
+        activeAccount={activeAccount}
+        settings={settings}
         onSuccess={() => {
           void fetchAll();
           showToast("Request penarikan berhasil dibuat");
