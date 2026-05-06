@@ -1,133 +1,25 @@
 import { useState, useEffect, useCallback } from "react";
-import { Link } from "react-router-dom";
-import api from "@/services/axios.config";
-
-// ==========================================
-// TYPES
-// ==========================================
-type OrderStatus =
-  | "PENDING"
-  | "PAID"
-  | "PROCESSING"
-  | "SHIPPED"
-  | "DELIVERED"
-  | "DONE"
-  | "EXPIRED"
-  | "REFUNDED";
-
-interface Order {
-  id: string;
-  order_code: string;
-  customer_name: string;
-  customer_email: string;
-  customer_phone: string;
-  status: OrderStatus;
-  total_amount: number;
-  discount_amount: number;
-  voucher_code: string | null;
-  payment_method: string | null;
-  payment_bank: string | null;
-  expedition_name: string | null;
-  tracking_number: string | null;
-  created_at: string;
-  paid_at: string | null;
-}
-
-interface Pagination {
-  total: number;
-  page: number;
-  limit: number;
-  total_pages: number;
-}
-
-// ==========================================
-// CONSTANTS
-// ==========================================
-const STATUS_CONFIG: Record<
-  OrderStatus,
-  { label: string; color: string; bg: string; border: string }
-> = {
-  PENDING: {
-    label: "Pending",
-    color: "#92400E",
-    bg: "#FEF3C7",
-    border: "#FCD34D",
-  },
-  PAID: {
-    label: "Dibayar",
-    color: "#1D4ED8",
-    bg: "#DBEAFE",
-    border: "#93C5FD",
-  },
-  PROCESSING: {
-    label: "Diproses",
-    color: "#5B21B6",
-    bg: "#EDE9FE",
-    border: "#C4B5FD",
-  },
-  SHIPPED: {
-    label: "Dikirim",
-    color: "#C2410C",
-    bg: "#FEF3C7",
-    border: "#FDE68A",
-  },
-  DELIVERED: {
-    label: "Sampai",
-    color: "#065F46",
-    bg: "#D1FAE5",
-    border: "#6EE7B7",
-  },
-  DONE: {
-    label: "Selesai",
-    color: "#065F46",
-    bg: "#D1FAE5",
-    border: "#6EE7B7",
-  },
-  EXPIRED: {
-    label: "Kadaluarsa",
-    color: "#6B7280",
-    bg: "#F3F4F6",
-    border: "#D1D5DB",
-  },
-  REFUNDED: {
-    label: "Refund",
-    color: "#991B1B",
-    bg: "#FEE2E2",
-    border: "#FCA5A5",
-  },
-};
-
-const ALL_STATUSES: OrderStatus[] = [
-  "PENDING",
-  "PAID",
-  "PROCESSING",
-  "SHIPPED",
-  "DELIVERED",
-  "DONE",
-  "EXPIRED",
-  "REFUNDED",
-];
+import { useNavigate, useSearchParams } from "react-router-dom";
+import {
+  adminGetOrders,
+  adminExportOrders,
+  type AdminOrderFilter,
+} from "@/services/api";
+import type { Order, OrderStatus } from "@/types/order.types";
 
 // ==========================================
 // HELPERS
 // ==========================================
-const formatRupiah = (n: number) =>
+const formatRupiah = (amount: number) =>
   new Intl.NumberFormat("id-ID", {
     style: "currency",
     currency: "IDR",
     minimumFractionDigits: 0,
-  }).format(n);
+  }).format(amount);
 
-const formatDate = (s: string) =>
-  new Date(s).toLocaleDateString("id-ID", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
-
-const formatDateTime = (s: string) =>
-  new Date(s).toLocaleString("id-ID", {
-    day: "2-digit",
+const formatDate = (dateStr: string) =>
+  new Date(dateStr).toLocaleDateString("id-ID", {
+    day: "numeric",
     month: "short",
     year: "numeric",
     hour: "2-digit",
@@ -135,10 +27,40 @@ const formatDateTime = (s: string) =>
   });
 
 // ==========================================
-// STATUS BADGE
+// STATUS CONFIG
 // ==========================================
+const STATUS_OPTIONS: { value: string; label: string }[] = [
+  { value: "", label: "Semua Status" },
+  { value: "PENDING", label: "Pending" },
+  { value: "PAID", label: "Dibayar" },
+  { value: "PROCESSING", label: "Diproses" },
+  { value: "SHIPPED", label: "Dikirim" },
+  { value: "DELIVERED", label: "Sampai" },
+  { value: "DONE", label: "Selesai" },
+  { value: "EXPIRED", label: "Kadaluarsa" },
+  { value: "REFUNDED", label: "Refund" },
+];
+
+const STATUS_STYLE: Record<
+  string,
+  { label: string; color: string; bg: string }
+> = {
+  PENDING: { label: "Pending", color: "#92400E", bg: "#FEF3C7" },
+  PAID: { label: "Dibayar", color: "#1D4ED8", bg: "#DBEAFE" },
+  PROCESSING: { label: "Diproses", color: "#5B21B6", bg: "#EDE9FE" },
+  SHIPPED: { label: "Dikirim", color: "#C2410C", bg: "#FEF3C7" },
+  DELIVERED: { label: "Sampai", color: "#065F46", bg: "#D1FAE5" },
+  DONE: { label: "Selesai", color: "#065F46", bg: "#D1FAE5" },
+  EXPIRED: { label: "Kadaluarsa", color: "#6B7280", bg: "#F3F4F6" },
+  REFUNDED: { label: "Refund", color: "#991B1B", bg: "#FEE2E2" },
+};
+
 function StatusBadge({ status }: { status: OrderStatus }) {
-  const cfg = STATUS_CONFIG[status];
+  const cfg = STATUS_STYLE[status] ?? {
+    label: status,
+    color: "#6B7280",
+    bg: "#F3F4F6",
+  };
   return (
     <span
       style={{
@@ -149,7 +71,6 @@ function StatusBadge({ status }: { status: OrderStatus }) {
         fontWeight: 700,
         color: cfg.color,
         background: cfg.bg,
-        border: `1px solid ${cfg.border}`,
         whiteSpace: "nowrap",
       }}
     >
@@ -161,108 +82,98 @@ function StatusBadge({ status }: { status: OrderStatus }) {
 // ==========================================
 // ADMIN ORDERS PAGE
 // ==========================================
+const LIMIT = 20;
+
 export default function AdminOrdersPage() {
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Filter dari URL
+  const [status, setStatus] = useState(searchParams.get("status") ?? "");
+  const [search, setSearch] = useState(searchParams.get("search") ?? "");
+  const [searchInput, setSearchInput] = useState(
+    searchParams.get("search") ?? "",
+  );
+  const [page, setPage] = useState(Number(searchParams.get("page") ?? 1));
+
   const [orders, setOrders] = useState<Order[]>([]);
-  const [pagination, setPagination] = useState<Pagination>({
+  const [pagination, setPagination] = useState({
     total: 0,
     page: 1,
-    limit: 20,
-    total_pages: 1,
+    limit: LIMIT,
+    total_pages: 0,
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  // Filters
-  const [search, setSearch] = useState("");
-  const [searchInput, setSearchInput] = useState("");
-  const [statusFilter, setStatusFilter] = useState<OrderStatus | "">("");
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
-  const [page, setPage] = useState(1);
-
-  // Export
   const [exporting, setExporting] = useState(false);
 
   // ---- Fetch ----
-  const fetchOrders = useCallback(async () => {
+  const fetchOrders = useCallback(async (filter: AdminOrderFilter) => {
     setLoading(true);
     setError(null);
     try {
-      const params = new URLSearchParams();
-      if (search) params.set("search", search);
-      if (statusFilter) params.set("status", statusFilter);
-      if (startDate) params.set("start_date", startDate);
-      if (endDate) params.set("end_date", endDate);
-      params.set("page", String(page));
-      params.set("limit", "20");
-
-      const res = await api.get<{
-        success: boolean;
-        data: Order[];
-        pagination: Pagination;
-      }>(`/admin/orders?${params.toString()}`);
-
-      setOrders(res.data.data);
-      setPagination(res.data.pagination);
+      const result = await adminGetOrders({ ...filter, limit: LIMIT });
+      setOrders(result.data);
+      setPagination(result.pagination);
     } catch {
       setError("Gagal memuat data pesanan");
     } finally {
       setLoading(false);
     }
-  }, [search, statusFilter, startDate, endDate, page]);
+  }, []);
 
   useEffect(() => {
-    void fetchOrders();
-  }, [fetchOrders]);
+    const filter: AdminOrderFilter = { page, limit: LIMIT };
+    if (status) filter.status = status;
+    if (search) filter.search = search;
 
-  // ---- Search handler ----
+    // Sync ke URL
+    const params: Record<string, string> = { page: String(page) };
+    if (status) params.status = status;
+    if (search) params.search = search;
+    setSearchParams(params, { replace: true });
+
+    void fetchOrders(filter);
+  }, [status, search, page, fetchOrders, setSearchParams]);
+
+  // ---- Search submit ----
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     setSearch(searchInput);
     setPage(1);
   };
 
-  const handleClearFilters = () => {
-    setSearch("");
-    setSearchInput("");
-    setStatusFilter("");
-    setStartDate("");
-    setEndDate("");
-    setPage(1);
-  };
-
-  const hasActiveFilter = search || statusFilter || startDate || endDate;
-
   // ---- Export ----
   const handleExport = async () => {
     setExporting(true);
     try {
-      const params = new URLSearchParams();
-      if (search) params.set("search", search);
-      if (statusFilter) params.set("status", statusFilter);
-      if (startDate) params.set("start_date", startDate);
-      if (endDate) params.set("end_date", endDate);
-
-      const res = await api.get(`/admin/orders/export?${params.toString()}`, {
-        responseType: "blob",
+      const blob = await adminExportOrders({
+        status: status || undefined,
+        search: search || undefined,
       });
-
-      const url = window.URL.createObjectURL(new Blob([res.data as BlobPart]));
+      const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
       a.download = `orders-${new Date().toISOString().slice(0, 10)}.xlsx`;
       a.click();
-      window.URL.revokeObjectURL(url);
+      URL.revokeObjectURL(url);
     } catch {
-      alert("Gagal mengekspor data");
+      alert("Gagal export data");
     } finally {
       setExporting(false);
     }
   };
 
-  // ==========================================
-  // RENDER
-  // ==========================================
+  const inputStyle: React.CSSProperties = {
+    padding: "9px 12px",
+    border: "1px solid #E5E7EB",
+    borderRadius: 8,
+    fontSize: 14,
+    outline: "none",
+    background: "#fff",
+    color: "#111827",
+  };
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       {/* ---- Header ---- */}
@@ -276,73 +187,66 @@ export default function AdminOrdersPage() {
         }}
       >
         <div>
-          <h1 style={{ fontSize: 22, fontWeight: 800, color: "#111827" }}>
-            Manajemen Pesanan
-          </h1>
-          <p style={{ fontSize: 14, color: "#6B7280", marginTop: 4 }}>
-            Total {pagination.total} pesanan
+          <h2 style={{ fontSize: 20, fontWeight: 800, color: "#111827" }}>
+            Pesanan
+          </h2>
+          <p style={{ fontSize: 14, color: "#6B7280", marginTop: 2 }}>
+            {pagination.total} total pesanan
           </p>
         </div>
         <button
           onClick={() => void handleExport()}
           disabled={exporting}
           style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
             padding: "9px 18px",
-            background: exporting ? "#E5E7EB" : "#10B981",
-            color: exporting ? "#9CA3AF" : "#fff",
+            background: "#10B981",
+            color: "#fff",
             border: "none",
             borderRadius: 8,
             fontWeight: 600,
             fontSize: 14,
             cursor: exporting ? "not-allowed" : "pointer",
-            transition: "background 0.15s",
+            opacity: exporting ? 0.7 : 1,
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
           }}
         >
-          {exporting ? "⏳ Mengekspor..." : "📥 Export Excel"}
+          {exporting ? "⏳ Mengexport..." : "📥 Export Excel"}
         </button>
       </div>
 
-      {/* ---- Filters ---- */}
+      {/* ---- Filter Bar ---- */}
       <div
         style={{
           background: "#fff",
           border: "1px solid #E5E7EB",
           borderRadius: 12,
-          padding: "20px",
+          padding: "16px 20px",
           display: "flex",
-          flexDirection: "column",
-          gap: 14,
+          gap: 12,
+          flexWrap: "wrap",
+          alignItems: "flex-end",
         }}
       >
         {/* Search */}
         <form
           onSubmit={handleSearch}
-          style={{ display: "flex", gap: 10, flexWrap: "wrap" }}
+          style={{ display: "flex", gap: 8, flex: 1, minWidth: 220 }}
         >
           <input
             type="text"
-            placeholder="Cari kode order, nama, atau email..."
+            placeholder="Cari order code, nama, email..."
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
-            style={{
-              flex: 1,
-              minWidth: 200,
-              padding: "9px 14px",
-              border: "1px solid #E5E7EB",
-              borderRadius: 8,
-              fontSize: 14,
-              outline: "none",
-            }}
+            style={{ ...inputStyle, flex: 1 }}
             onFocus={(e) => (e.currentTarget.style.borderColor = "#3B82F6")}
             onBlur={(e) => (e.currentTarget.style.borderColor = "#E5E7EB")}
           />
           <button
             type="submit"
             style={{
-              padding: "9px 20px",
+              padding: "9px 16px",
               background: "#3B82F6",
               color: "#fff",
               border: "none",
@@ -350,143 +254,51 @@ export default function AdminOrdersPage() {
               fontWeight: 600,
               fontSize: 14,
               cursor: "pointer",
+              whiteSpace: "nowrap",
             }}
           >
             🔍 Cari
           </button>
-          {hasActiveFilter && (
-            <button
-              type="button"
-              onClick={handleClearFilters}
-              style={{
-                padding: "9px 16px",
-                background: "transparent",
-                color: "#6B7280",
-                border: "1px solid #E5E7EB",
-                borderRadius: 8,
-                fontSize: 14,
-                cursor: "pointer",
-              }}
-            >
-              ✕ Reset
-            </button>
-          )}
         </form>
 
-        {/* Status + Date filters */}
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          {/* Status filter */}
-          <select
-            value={statusFilter}
-            onChange={(e) => {
-              setStatusFilter(e.target.value as OrderStatus | "");
+        {/* Status filter */}
+        <select
+          value={status}
+          onChange={(e) => {
+            setStatus(e.target.value);
+            setPage(1);
+          }}
+          style={{ ...inputStyle, minWidth: 160 }}
+        >
+          {STATUS_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+
+        {/* Reset */}
+        {(status || search) && (
+          <button
+            onClick={() => {
+              setStatus("");
+              setSearch("");
+              setSearchInput("");
               setPage(1);
             }}
             style={{
-              padding: "8px 12px",
+              padding: "9px 14px",
+              background: "transparent",
+              color: "#6B7280",
               border: "1px solid #E5E7EB",
               borderRadius: 8,
               fontSize: 13,
-              outline: "none",
-              background: "#fff",
-              color: "#374151",
               cursor: "pointer",
+              whiteSpace: "nowrap",
             }}
           >
-            <option value="">Semua Status</option>
-            {ALL_STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {STATUS_CONFIG[s].label}
-              </option>
-            ))}
-          </select>
-
-          {/* Date range */}
-          <input
-            type="date"
-            value={startDate}
-            onChange={(e) => {
-              setStartDate(e.target.value);
-              setPage(1);
-            }}
-            style={{
-              padding: "8px 12px",
-              border: "1px solid #E5E7EB",
-              borderRadius: 8,
-              fontSize: 13,
-              outline: "none",
-              color: "#374151",
-            }}
-          />
-          <span
-            style={{
-              display: "flex",
-              alignItems: "center",
-              color: "#9CA3AF",
-              fontSize: 13,
-            }}
-          >
-            s/d
-          </span>
-          <input
-            type="date"
-            value={endDate}
-            onChange={(e) => {
-              setEndDate(e.target.value);
-              setPage(1);
-            }}
-            style={{
-              padding: "8px 12px",
-              border: "1px solid #E5E7EB",
-              borderRadius: 8,
-              fontSize: 13,
-              outline: "none",
-              color: "#374151",
-            }}
-          />
-        </div>
-
-        {/* Active filter chips */}
-        {hasActiveFilter && (
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-            {search && (
-              <FilterChip
-                label={`Cari: "${search}"`}
-                onRemove={() => {
-                  setSearch("");
-                  setSearchInput("");
-                  setPage(1);
-                }}
-              />
-            )}
-            {statusFilter && (
-              <FilterChip
-                label={`Status: ${STATUS_CONFIG[statusFilter].label}`}
-                onRemove={() => {
-                  setStatusFilter("");
-                  setPage(1);
-                }}
-              />
-            )}
-            {startDate && (
-              <FilterChip
-                label={`Dari: ${formatDate(startDate)}`}
-                onRemove={() => {
-                  setStartDate("");
-                  setPage(1);
-                }}
-              />
-            )}
-            {endDate && (
-              <FilterChip
-                label={`Sampai: ${formatDate(endDate)}`}
-                onRemove={() => {
-                  setEndDate("");
-                  setPage(1);
-                }}
-              />
-            )}
-          </div>
+            ✕ Reset
+          </button>
         )}
       </div>
 
@@ -500,14 +312,66 @@ export default function AdminOrdersPage() {
         }}
       >
         {loading ? (
-          <LoadingRows />
+          <div style={{ padding: "60px", textAlign: "center" }}>
+            <div
+              style={{
+                width: 32,
+                height: 32,
+                border: "3px solid #E5E7EB",
+                borderTopColor: "#3B82F6",
+                borderRadius: "50%",
+                animation: "spin 0.8s linear infinite",
+                margin: "0 auto 12px",
+              }}
+            />
+            <p style={{ color: "#9CA3AF", fontSize: 14 }}>Memuat pesanan...</p>
+            <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
+          </div>
         ) : error ? (
-          <ErrorState message={error} onRetry={() => void fetchOrders()} />
+          <div style={{ padding: 24, textAlign: "center" }}>
+            <p style={{ color: "#EF4444", fontSize: 14 }}>❌ {error}</p>
+            <button
+              onClick={() => void fetchOrders({ page, status, search })}
+              style={{
+                marginTop: 12,
+                padding: "8px 16px",
+                background: "#3B82F6",
+                color: "#fff",
+                border: "none",
+                borderRadius: 8,
+                cursor: "pointer",
+                fontSize: 13,
+              }}
+            >
+              Coba Lagi
+            </button>
+          </div>
         ) : orders.length === 0 ? (
-          <EmptyState hasFilter={!!hasActiveFilter} />
+          <div
+            style={{
+              padding: "60px",
+              textAlign: "center",
+              color: "#9CA3AF",
+              fontSize: 14,
+            }}
+          >
+            <p style={{ fontSize: 36, marginBottom: 12 }}>📭</p>
+            <p>Tidak ada pesanan ditemukan</p>
+            {(status || search) && (
+              <p style={{ marginTop: 4, fontSize: 13 }}>
+                Coba ubah filter pencarian
+              </p>
+            )}
+          </div>
         ) : (
           <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <table
+              style={{
+                width: "100%",
+                borderCollapse: "collapse",
+                fontSize: 14,
+              }}
+            >
               <thead>
                 <tr
                   style={{
@@ -518,23 +382,22 @@ export default function AdminOrdersPage() {
                   {[
                     "No. Order",
                     "Customer",
-                    "Produk/Pembayaran",
+                    "Produk",
                     "Total",
+                    "Pembayaran",
                     "Status",
                     "Tanggal",
-                    "Aksi",
+                    "",
                   ].map((h) => (
                     <th
                       key={h}
                       style={{
                         padding: "11px 16px",
                         fontSize: 12,
-                        fontWeight: 700,
+                        fontWeight: 600,
                         color: "#6B7280",
                         textAlign: "left",
                         whiteSpace: "nowrap",
-                        letterSpacing: "0.03em",
-                        textTransform: "uppercase",
                       }}
                     >
                       {h}
@@ -543,18 +406,19 @@ export default function AdminOrdersPage() {
                 </tr>
               </thead>
               <tbody>
-                {orders.map((order, idx) => (
+                {orders.map((order) => (
                   <tr
                     key={order.id}
+                    onClick={() => navigate(`/admin/orders/${order.id}`)}
                     style={{
-                      borderBottom:
-                        idx < orders.length - 1 ? "1px solid #F3F4F6" : "none",
+                      borderBottom: "1px solid #F3F4F6",
+                      cursor: "pointer",
                       transition: "background 0.1s",
                     }}
                     onMouseOver={(e) =>
                       ((
                         e.currentTarget as HTMLTableRowElement
-                      ).style.background = "#FAFAFA")
+                      ).style.background = "#F9FAFB")
                     }
                     onMouseOut={(e) =>
                       ((
@@ -562,91 +426,65 @@ export default function AdminOrdersPage() {
                       ).style.background = "transparent")
                     }
                   >
-                    {/* No. Order */}
-                    <td style={{ padding: "12px 16px" }}>
-                      <p
+                    {/* Order code */}
+                    <td style={{ padding: "13px 16px", whiteSpace: "nowrap" }}>
+                      <span
                         style={{
                           fontFamily: "monospace",
-                          fontSize: 13,
                           fontWeight: 700,
-                          color: "#1D4ED8",
-                          letterSpacing: "0.03em",
+                          fontSize: 13,
+                          color: "#3B82F6",
                         }}
                       >
                         {order.order_code}
-                      </p>
+                      </span>
                     </td>
 
                     {/* Customer */}
-                    <td style={{ padding: "12px 16px" }}>
+                    <td style={{ padding: "13px 16px" }}>
                       <p
                         style={{
-                          fontSize: 14,
                           fontWeight: 600,
                           color: "#111827",
-                          marginBottom: 2,
+                          whiteSpace: "nowrap",
                         }}
                       >
                         {order.customer_name}
                       </p>
-                      <p style={{ fontSize: 12, color: "#9CA3AF" }}>
+                      <p
+                        style={{
+                          fontSize: 12,
+                          color: "#9CA3AF",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
                         {order.customer_email}
                       </p>
                     </td>
 
-                    {/* Pembayaran */}
-                    <td style={{ padding: "12px 16px" }}>
-                      <p style={{ fontSize: 13, color: "#374151" }}>
-                        {order.payment_method === "bank_transfer"
-                          ? `🏦 ${order.payment_bank?.toUpperCase() ?? "Bank"}`
-                          : "📱 QRIS"}
+                    {/* Produk */}
+                    <td style={{ padding: "13px 16px" }}>
+                      <p style={{ fontSize: 13, color: "#6B7280" }}>
+                        {order.items?.length ?? 0} item
                       </p>
-                      {order.expedition_name && (
-                        <p
-                          style={{
-                            fontSize: 12,
-                            color: "#9CA3AF",
-                            marginTop: 2,
-                          }}
-                        >
-                          🚚 {order.expedition_name}
-                        </p>
-                      )}
-                      {order.voucher_code && (
-                        <span
-                          style={{
-                            display: "inline-block",
-                            marginTop: 4,
-                            fontSize: 11,
-                            background: "#ECFDF5",
-                            color: "#065F46",
-                            padding: "1px 6px",
-                            borderRadius: 99,
-                            fontWeight: 600,
-                          }}
-                        >
-                          🏷️ {order.voucher_code}
-                        </span>
-                      )}
                     </td>
 
                     {/* Total */}
-                    <td style={{ padding: "12px 16px", whiteSpace: "nowrap" }}>
-                      <p
-                        style={{
-                          fontSize: 14,
-                          fontWeight: 700,
-                          color: "#111827",
-                        }}
-                      >
-                        {formatRupiah(order.total_amount)}
-                      </p>
+                    <td
+                      style={{
+                        padding: "13px 16px",
+                        fontWeight: 700,
+                        color: "#111827",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {formatRupiah(order.total_amount)}
                       {order.discount_amount > 0 && (
                         <p
                           style={{
                             fontSize: 11,
                             color: "#10B981",
-                            marginTop: 1,
+                            fontWeight: 500,
                           }}
                         >
                           Hemat {formatRupiah(order.discount_amount)}
@@ -654,61 +492,49 @@ export default function AdminOrdersPage() {
                       )}
                     </td>
 
+                    {/* Pembayaran */}
+                    <td
+                      style={{
+                        padding: "13px 16px",
+                        fontSize: 13,
+                        color: "#6B7280",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {order.payment_method === "qris"
+                        ? "QRIS"
+                        : `VA ${order.payment_bank?.toUpperCase() ?? "-"}`}
+                    </td>
+
                     {/* Status */}
-                    <td style={{ padding: "12px 16px" }}>
+                    <td style={{ padding: "13px 16px" }}>
                       <StatusBadge status={order.status} />
                     </td>
 
                     {/* Tanggal */}
-                    <td style={{ padding: "12px 16px", whiteSpace: "nowrap" }}>
-                      <p style={{ fontSize: 13, color: "#374151" }}>
-                        {formatDateTime(order.created_at)}
-                      </p>
-                      {order.paid_at && (
-                        <p
-                          style={{
-                            fontSize: 11,
-                            color: "#10B981",
-                            marginTop: 2,
-                          }}
-                        >
-                          Bayar: {formatDate(order.paid_at)}
-                        </p>
-                      )}
+                    <td
+                      style={{
+                        padding: "13px 16px",
+                        fontSize: 12,
+                        color: "#9CA3AF",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {formatDate(order.created_at)}
                     </td>
 
-                    {/* Aksi */}
-                    <td style={{ padding: "12px 16px" }}>
-                      <Link
-                        to={`/admin/orders/${order.id}`}
+                    {/* Action */}
+                    <td style={{ padding: "13px 16px" }}>
+                      <span
                         style={{
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: 4,
-                          padding: "6px 14px",
-                          background: "#EFF6FF",
-                          color: "#1D4ED8",
-                          border: "1px solid #BFDBFE",
-                          borderRadius: 7,
                           fontSize: 13,
+                          color: "#3B82F6",
                           fontWeight: 600,
-                          textDecoration: "none",
                           whiteSpace: "nowrap",
-                          transition: "background 0.15s",
                         }}
-                        onMouseOver={(e) =>
-                          ((
-                            e.currentTarget as HTMLAnchorElement
-                          ).style.background = "#DBEAFE")
-                        }
-                        onMouseOut={(e) =>
-                          ((
-                            e.currentTarget as HTMLAnchorElement
-                          ).style.background = "#EFF6FF")
-                        }
                       >
                         Detail →
-                      </Link>
+                      </span>
                     </td>
                   </tr>
                 ))}
@@ -719,269 +545,97 @@ export default function AdminOrdersPage() {
       </div>
 
       {/* ---- Pagination ---- */}
-      {!loading && !error && pagination.total_pages > 1 && (
-        <Pagination pagination={pagination} onPageChange={(p) => setPage(p)} />
-      )}
-    </div>
-  );
-}
-
-// ==========================================
-// SUB COMPONENTS
-// ==========================================
-
-function FilterChip({
-  label,
-  onRemove,
-}: {
-  label: string;
-  onRemove: () => void;
-}) {
-  return (
-    <span
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 6,
-        padding: "3px 10px",
-        background: "#EFF6FF",
-        color: "#1D4ED8",
-        border: "1px solid #BFDBFE",
-        borderRadius: 99,
-        fontSize: 12,
-        fontWeight: 600,
-      }}
-    >
-      {label}
-      <button
-        onClick={onRemove}
-        style={{
-          background: "none",
-          border: "none",
-          cursor: "pointer",
-          color: "#93C5FD",
-          fontSize: 14,
-          lineHeight: 1,
-          padding: 0,
-          display: "flex",
-          alignItems: "center",
-        }}
-      >
-        ×
-      </button>
-    </span>
-  );
-}
-
-function LoadingRows() {
-  return (
-    <div style={{ padding: "40px 0" }}>
-      {[...Array(5)].map((_, i) => (
+      {pagination.total_pages > 1 && (
         <div
-          key={i}
           style={{
             display: "flex",
-            gap: 16,
-            padding: "14px 20px",
-            borderBottom: "1px solid #F3F4F6",
+            justifyContent: "space-between",
+            alignItems: "center",
+            flexWrap: "wrap",
+            gap: 12,
           }}
         >
-          {[120, 160, 140, 100, 80, 100, 70].map((w, j) => (
-            <div
-              key={j}
+          <p style={{ fontSize: 13, color: "#6B7280" }}>
+            Menampilkan {Math.min((page - 1) * LIMIT + 1, pagination.total)}–
+            {Math.min(page * LIMIT, pagination.total)} dari {pagination.total}{" "}
+            pesanan
+          </p>
+          <div style={{ display: "flex", gap: 6 }}>
+            <button
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page === 1}
               style={{
-                height: 16,
-                width: w,
-                borderRadius: 6,
-                background: "#F3F4F6",
-                animation: "pulse 1.5s ease-in-out infinite",
-                animationDelay: `${i * 0.1}s`,
+                padding: "7px 14px",
+                border: "1px solid #E5E7EB",
+                borderRadius: 8,
+                background: "#fff",
+                fontSize: 13,
+                cursor: page === 1 ? "not-allowed" : "pointer",
+                opacity: page === 1 ? 0.5 : 1,
+                fontWeight: 500,
               }}
-            />
-          ))}
-        </div>
-      ))}
-      <style>{`
-        @keyframes pulse {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.4; }
-        }
-      `}</style>
-    </div>
-  );
-}
-
-function ErrorState({
-  message,
-  onRetry,
-}: {
-  message: string;
-  onRetry: () => void;
-}) {
-  return (
-    <div
-      style={{
-        padding: "48px 32px",
-        textAlign: "center",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        gap: 12,
-      }}
-    >
-      <span style={{ fontSize: 36 }}>❌</span>
-      <p style={{ color: "#DC2626", fontSize: 15, fontWeight: 600 }}>
-        {message}
-      </p>
-      <button
-        onClick={onRetry}
-        style={{
-          padding: "8px 20px",
-          background: "#3B82F6",
-          color: "#fff",
-          border: "none",
-          borderRadius: 8,
-          fontSize: 14,
-          fontWeight: 600,
-          cursor: "pointer",
-        }}
-      >
-        Coba Lagi
-      </button>
-    </div>
-  );
-}
-
-function EmptyState({ hasFilter }: { hasFilter: boolean }) {
-  return (
-    <div
-      style={{
-        padding: "64px 32px",
-        textAlign: "center",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        gap: 10,
-      }}
-    >
-      <span style={{ fontSize: 48 }}>🛒</span>
-      <p style={{ fontSize: 16, fontWeight: 700, color: "#374151" }}>
-        {hasFilter ? "Tidak ada pesanan yang cocok" : "Belum ada pesanan"}
-      </p>
-      <p style={{ fontSize: 14, color: "#9CA3AF" }}>
-        {hasFilter
-          ? "Coba ubah filter pencarian Anda"
-          : "Pesanan akan muncul di sini setelah customer checkout"}
-      </p>
-    </div>
-  );
-}
-
-function Pagination({
-  pagination,
-  onPageChange,
-}: {
-  pagination: Pagination;
-  onPageChange: (page: number) => void;
-}) {
-  const { page, total_pages, total, limit } = pagination;
-  const start = (page - 1) * limit + 1;
-  const end = Math.min(page * limit, total);
-
-  // Build page numbers to show
-  const pages: (number | "...")[] = [];
-  if (total_pages <= 7) {
-    for (let i = 1; i <= total_pages; i++) pages.push(i);
-  } else {
-    pages.push(1);
-    if (page > 3) pages.push("...");
-    for (
-      let i = Math.max(2, page - 1);
-      i <= Math.min(total_pages - 1, page + 1);
-      i++
-    )
-      pages.push(i);
-    if (page < total_pages - 2) pages.push("...");
-    pages.push(total_pages);
-  }
-
-  return (
-    <div
-      style={{
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
-        flexWrap: "wrap",
-        gap: 12,
-      }}
-    >
-      <p style={{ fontSize: 13, color: "#6B7280" }}>
-        Menampilkan {start}–{end} dari {total} pesanan
-      </p>
-
-      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-        <PageBtn
-          label="←"
-          disabled={page === 1}
-          onClick={() => onPageChange(page - 1)}
-        />
-        {pages.map((p, i) =>
-          p === "..." ? (
-            <span
-              key={`ellipsis-${i}`}
-              style={{ fontSize: 13, color: "#9CA3AF", padding: "0 4px" }}
             >
-              ...
-            </span>
-          ) : (
-            <PageBtn
-              key={p}
-              label={String(p)}
-              active={p === page}
-              onClick={() => onPageChange(p as number)}
-            />
-          ),
-        )}
-        <PageBtn
-          label="→"
-          disabled={page === total_pages}
-          onClick={() => onPageChange(page + 1)}
-        />
-      </div>
-    </div>
-  );
-}
+              ← Prev
+            </button>
 
-function PageBtn({
-  label,
-  active,
-  disabled,
-  onClick,
-}: {
-  label: string;
-  active?: boolean;
-  disabled?: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      style={{
-        minWidth: 34,
-        height: 34,
-        padding: "0 8px",
-        borderRadius: 8,
-        border: active ? "none" : "1px solid #E5E7EB",
-        background: active ? "#3B82F6" : disabled ? "#F9FAFB" : "#fff",
-        color: active ? "#fff" : disabled ? "#D1D5DB" : "#374151",
-        fontSize: 13,
-        fontWeight: active ? 700 : 500,
-        cursor: disabled ? "not-allowed" : "pointer",
-        transition: "background 0.15s, color 0.15s",
-      }}
-    >
-      {label}
-    </button>
+            {/* Page numbers */}
+            {Array.from(
+              { length: Math.min(5, pagination.total_pages) },
+              (_, i) => {
+                let p: number;
+                if (pagination.total_pages <= 5) {
+                  p = i + 1;
+                } else if (page <= 3) {
+                  p = i + 1;
+                } else if (page >= pagination.total_pages - 2) {
+                  p = pagination.total_pages - 4 + i;
+                } else {
+                  p = page - 2 + i;
+                }
+                return (
+                  <button
+                    key={p}
+                    onClick={() => setPage(p)}
+                    style={{
+                      padding: "7px 12px",
+                      border: `1px solid ${p === page ? "#3B82F6" : "#E5E7EB"}`,
+                      borderRadius: 8,
+                      background: p === page ? "#3B82F6" : "#fff",
+                      color: p === page ? "#fff" : "#374151",
+                      fontSize: 13,
+                      cursor: "pointer",
+                      fontWeight: p === page ? 700 : 500,
+                      minWidth: 36,
+                    }}
+                  >
+                    {p}
+                  </button>
+                );
+              },
+            )}
+
+            <button
+              onClick={() =>
+                setPage((p) => Math.min(pagination.total_pages, p + 1))
+              }
+              disabled={page === pagination.total_pages}
+              style={{
+                padding: "7px 14px",
+                border: "1px solid #E5E7EB",
+                borderRadius: 8,
+                background: "#fff",
+                fontSize: 13,
+                cursor:
+                  page === pagination.total_pages ? "not-allowed" : "pointer",
+                opacity: page === pagination.total_pages ? 0.5 : 1,
+                fontWeight: 500,
+              }}
+            >
+              Next →
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

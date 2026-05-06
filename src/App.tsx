@@ -6,18 +6,14 @@ import LandingPage from "@/pages/LandingPage";
 import CheckoutPage from "@/pages/CheckoutPage";
 import TrackingPage from "@/pages/TrackingPage";
 
-// Admin layout + auth
+// Admin pages
 import AdminLayout from "@/layouts/AdminLayout";
-
-// Admin pages — sudah real
 import AdminLoginPage from "@/pages/admin/LoginPage";
 import AdminDashboardPage from "@/pages/admin/DashboardPage";
-import AdminOrdersPage from "@/pages/admin/OrdersPage";
-import AdminOrderDetailPage from "@/pages/admin/OrderDetailPage";
-import AdminProductsPage from "@/pages/admin/ProductsPage";
-
-// Admin pages — masih placeholder, akan diisi bertahap
 import {
+  AdminOrdersPage,
+  AdminOrderDetailPage,
+  AdminProductsPage,
   AdminContentPage,
   AdminVouchersPage,
   AdminReviewsPage,

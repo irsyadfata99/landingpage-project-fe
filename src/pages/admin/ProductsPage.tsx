@@ -1,26 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import api from "@/services/axios.config";
+import type { Product } from "@/types/product.types";
+import Modal from "@/components/common/Modal";
 
 // ==========================================
 // TYPES
 // ==========================================
 type ProductType = "PHYSICAL" | "DIGITAL" | "BOTH";
-
-interface Product {
-  id: string;
-  name: string;
-  description: string | null;
-  price: number;
-  original_price: number | null;
-  product_type: ProductType;
-  stock: number | null;
-  image_url: string | null;
-  download_url: string | null;
-  download_expires_hours: number;
-  is_active: boolean;
-  sort_order: number;
-  created_at: string;
-}
 
 interface ProductForm {
   name: string;
@@ -34,30 +20,6 @@ interface ProductForm {
   is_active: boolean;
   sort_order: string;
 }
-
-interface Pagination {
-  total: number;
-  page: number;
-  limit: number;
-  total_pages: number;
-}
-
-// ==========================================
-// CONSTANTS
-// ==========================================
-const PRODUCT_TYPE_CONFIG: Record<
-  ProductType,
-  { label: string; icon: string; color: string; bg: string }
-> = {
-  PHYSICAL: { label: "Fisik", icon: "📦", color: "#1D4ED8", bg: "#DBEAFE" },
-  DIGITAL: { label: "Digital", icon: "📥", color: "#7C3AED", bg: "#EDE9FE" },
-  BOTH: {
-    label: "Fisik & Digital",
-    icon: "📦",
-    color: "#C2410C",
-    bg: "#FEF3C7",
-  },
-};
 
 const EMPTY_FORM: ProductForm = {
   name: "",
@@ -75,1137 +37,94 @@ const EMPTY_FORM: ProductForm = {
 // ==========================================
 // HELPERS
 // ==========================================
-const formatRupiah = (n: number) =>
+const formatRupiah = (amount: number) =>
   new Intl.NumberFormat("id-ID", {
     style: "currency",
     currency: "IDR",
     minimumFractionDigits: 0,
-  }).format(n);
+  }).format(amount);
+
+const TYPE_STYLE: Record<
+  ProductType,
+  { label: string; color: string; bg: string }
+> = {
+  PHYSICAL: { label: "📦 Fisik", color: "#1D4ED8", bg: "#DBEAFE" },
+  DIGITAL: { label: "📥 Digital", color: "#7C3AED", bg: "#EDE9FE" },
+  BOTH: { label: "📦+📥 Keduanya", color: "#B45309", bg: "#FEF3C7" },
+};
 
 // ==========================================
-// MAIN PAGE
+// API FUNCTIONS
 // ==========================================
-export default function AdminProductsPage() {
-  const [products, setProducts] = useState<Product[]>([]);
-  const [pagination, setPagination] = useState<Pagination>({
-    total: 0,
-    page: 1,
-    limit: 10,
-    total_pages: 1,
-  });
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [page, setPage] = useState(1);
-
-  // Modal
-  const [modalOpen, setModalOpen] = useState(false);
-  const [editProduct, setEditProduct] = useState<Product | null>(null);
-  const [form, setForm] = useState<ProductForm>(EMPTY_FORM);
-  const [imageFile, setImageFile] = useState<File | null>(null);
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [formError, setFormError] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // Delete confirm
-  const [deleteId, setDeleteId] = useState<string | null>(null);
-  const [deleting, setDeleting] = useState(false);
-
-  // Toast
-  const [toast, setToast] = useState<{
-    msg: string;
-    type: "success" | "error";
-  } | null>(null);
-
-  // ---- Toast auto-dismiss ----
-  useEffect(() => {
-    if (toast) {
-      const t = setTimeout(() => setToast(null), 3500);
-      return () => clearTimeout(t);
-    }
-  }, [toast]);
-
-  // ---- Fetch ----
-  const fetchProducts = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await api.get<{
-        success: boolean;
-        data: Product[];
-        pagination: Pagination;
-      }>(`/admin/products?page=${page}&limit=10`);
-      setProducts(res.data.data);
-      setPagination(res.data.pagination);
-    } catch {
-      setError("Gagal memuat data produk");
-    } finally {
-      setLoading(false);
-    }
-  }, [page]);
-
-  useEffect(() => {
-    void fetchProducts();
-  }, [fetchProducts]);
-
-  // ---- Open modal ----
-  const openCreate = () => {
-    setEditProduct(null);
-    setForm(EMPTY_FORM);
-    setImageFile(null);
-    setImagePreview(null);
-    setFormError(null);
-    setModalOpen(true);
+interface PaginatedResponse<T> {
+  success: boolean;
+  data: T[];
+  pagination: {
+    total: number;
+    page: number;
+    limit: number;
+    total_pages: number;
   };
-
-  const openEdit = (product: Product) => {
-    setEditProduct(product);
-    setForm({
-      name: product.name,
-      description: product.description ?? "",
-      price: String(product.price),
-      original_price: product.original_price
-        ? String(product.original_price)
-        : "",
-      product_type: product.product_type,
-      stock: product.stock !== null ? String(product.stock) : "",
-      download_url: product.download_url ?? "",
-      download_expires_hours: String(product.download_expires_hours),
-      is_active: product.is_active,
-      sort_order: String(product.sort_order),
-    });
-    setImageFile(null);
-    setImagePreview(product.image_url);
-    setFormError(null);
-    setModalOpen(true);
-  };
-
-  const closeModal = () => {
-    if (saving) return;
-    setModalOpen(false);
-    setEditProduct(null);
-    setImageFile(null);
-    setImagePreview(null);
-    setFormError(null);
-  };
-
-  // ---- Image change ----
-  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setImageFile(file);
-    setImagePreview(URL.createObjectURL(file));
-  };
-
-  // ---- Form change ----
-  const handleFormChange = (
-    field: keyof ProductForm,
-    value: string | boolean,
-  ) => {
-    setForm((prev) => ({ ...prev, [field]: value }));
-  };
-
-  // ---- Submit ----
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setFormError(null);
-
-    if (!form.name.trim()) {
-      setFormError("Nama produk wajib diisi");
-      return;
-    }
-    if (!form.price || isNaN(Number(form.price))) {
-      setFormError("Harga tidak valid");
-      return;
-    }
-
-    setSaving(true);
-    try {
-      const formData = new FormData();
-      formData.append("name", form.name.trim());
-      formData.append("description", form.description.trim());
-      formData.append("price", form.price);
-      if (form.original_price)
-        formData.append("original_price", form.original_price);
-      formData.append("product_type", form.product_type);
-      if (form.stock !== "") formData.append("stock", form.stock);
-      if (form.download_url)
-        formData.append("download_url", form.download_url.trim());
-      formData.append(
-        "download_expires_hours",
-        form.download_expires_hours || "24",
-      );
-      formData.append("is_active", String(form.is_active));
-      formData.append("sort_order", form.sort_order || "0");
-      if (imageFile) formData.append("image", imageFile);
-
-      if (editProduct) {
-        await api.put(`/admin/products/${editProduct.id}`, formData, {
-          headers: { "Content-Type": "multipart/form-data" },
-        });
-        setToast({ msg: "Produk berhasil diupdate", type: "success" });
-      } else {
-        await api.post("/admin/products", formData, {
-          headers: { "Content-Type": "multipart/form-data" },
-        });
-        setToast({ msg: "Produk berhasil ditambahkan", type: "success" });
-      }
-
-      closeModal();
-      await fetchProducts();
-    } catch (err: unknown) {
-      const msg =
-        (err as { response?: { data?: { message?: string } } })?.response?.data
-          ?.message ?? "Gagal menyimpan produk";
-      setFormError(msg);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  // ---- Toggle ----
-  const handleToggle = async (product: Product) => {
-    try {
-      await api.patch(`/admin/products/${product.id}/toggle`);
-      setToast({
-        msg: `Produk "${product.name}" ${product.is_active ? "dinonaktifkan" : "diaktifkan"}`,
-        type: "success",
-      });
-      await fetchProducts();
-    } catch {
-      setToast({ msg: "Gagal mengubah status produk", type: "error" });
-    }
-  };
-
-  // ---- Delete ----
-  const handleDelete = async () => {
-    if (!deleteId) return;
-    setDeleting(true);
-    try {
-      await api.delete(`/admin/products/${deleteId}`);
-      setToast({ msg: "Produk berhasil dihapus", type: "success" });
-      setDeleteId(null);
-      await fetchProducts();
-    } catch {
-      setToast({ msg: "Gagal menghapus produk", type: "error" });
-    } finally {
-      setDeleting(false);
-    }
-  };
-
-  const isDigitalOrBoth =
-    form.product_type === "DIGITAL" || form.product_type === "BOTH";
-  const isPhysicalOrBoth =
-    form.product_type === "PHYSICAL" || form.product_type === "BOTH";
-
-  // ==========================================
-  // RENDER
-  // ==========================================
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-      {/* ---- Toast ---- */}
-      {toast && (
-        <div
-          style={{
-            position: "fixed",
-            top: 20,
-            right: 20,
-            zIndex: 9999,
-            padding: "12px 20px",
-            borderRadius: 10,
-            background: toast.type === "success" ? "#ECFDF5" : "#FEF2F2",
-            border: `1px solid ${toast.type === "success" ? "#6EE7B7" : "#FCA5A5"}`,
-            color: toast.type === "success" ? "#065F46" : "#DC2626",
-            fontSize: 14,
-            fontWeight: 600,
-            boxShadow: "0 8px 24px rgba(0,0,0,0.12)",
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            maxWidth: 360,
-            animation: "slideIn 0.2s ease",
-          }}
-        >
-          {toast.type === "success" ? "✅" : "❌"} {toast.msg}
-        </div>
-      )}
-
-      {/* ---- Header ---- */}
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "flex-start",
-          flexWrap: "wrap",
-          gap: 12,
-        }}
-      >
-        <div>
-          <h1 style={{ fontSize: 22, fontWeight: 800, color: "#111827" }}>
-            Manajemen Produk
-          </h1>
-          <p style={{ fontSize: 14, color: "#6B7280", marginTop: 4 }}>
-            Total {pagination.total} produk
-          </p>
-        </div>
-        <button
-          onClick={openCreate}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            padding: "10px 20px",
-            background: "#1D4ED8",
-            color: "#fff",
-            border: "none",
-            borderRadius: 8,
-            fontWeight: 700,
-            fontSize: 14,
-            cursor: "pointer",
-          }}
-        >
-          + Tambah Produk
-        </button>
-      </div>
-
-      {/* ---- Product Grid ---- */}
-      {loading ? (
-        <ProductSkeleton />
-      ) : error ? (
-        <ErrorState message={error} onRetry={() => void fetchProducts()} />
-      ) : products.length === 0 ? (
-        <EmptyState onAdd={openCreate} />
-      ) : (
-        <>
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))",
-              gap: 16,
-            }}
-          >
-            {products.map((product) => {
-              const typeCfg = PRODUCT_TYPE_CONFIG[product.product_type];
-              return (
-                <div
-                  key={product.id}
-                  style={{
-                    background: "#fff",
-                    border: `1px solid ${product.is_active ? "#E5E7EB" : "#F3F4F6"}`,
-                    borderRadius: 12,
-                    overflow: "hidden",
-                    opacity: product.is_active ? 1 : 0.65,
-                    transition: "box-shadow 0.15s",
-                  }}
-                  onMouseOver={(e) =>
-                    ((e.currentTarget as HTMLDivElement).style.boxShadow =
-                      "0 4px 16px rgba(0,0,0,0.08)")
-                  }
-                  onMouseOut={(e) =>
-                    ((e.currentTarget as HTMLDivElement).style.boxShadow =
-                      "none")
-                  }
-                >
-                  {/* Image */}
-                  <div
-                    style={{
-                      height: 160,
-                      background: "#F9FAFB",
-                      position: "relative",
-                      overflow: "hidden",
-                    }}
-                  >
-                    {product.image_url ? (
-                      <img
-                        src={product.image_url}
-                        alt={product.name}
-                        style={{
-                          width: "100%",
-                          height: "100%",
-                          objectFit: "cover",
-                        }}
-                      />
-                    ) : (
-                      <div
-                        style={{
-                          width: "100%",
-                          height: "100%",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          fontSize: 40,
-                          color: "#D1D5DB",
-                        }}
-                      >
-                        {typeCfg.icon}
-                      </div>
-                    )}
-                    {/* Type badge */}
-                    <span
-                      style={{
-                        position: "absolute",
-                        top: 10,
-                        left: 10,
-                        fontSize: 11,
-                        fontWeight: 700,
-                        color: typeCfg.color,
-                        background: typeCfg.bg,
-                        padding: "3px 8px",
-                        borderRadius: 99,
-                      }}
-                    >
-                      {typeCfg.icon} {typeCfg.label}
-                    </span>
-                    {/* Active badge */}
-                    {!product.is_active && (
-                      <span
-                        style={{
-                          position: "absolute",
-                          top: 10,
-                          right: 10,
-                          fontSize: 11,
-                          fontWeight: 700,
-                          color: "#6B7280",
-                          background: "#F3F4F6",
-                          border: "1px solid #D1D5DB",
-                          padding: "3px 8px",
-                          borderRadius: 99,
-                        }}
-                      >
-                        Nonaktif
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Content */}
-                  <div style={{ padding: "16px" }}>
-                    <h3
-                      style={{
-                        fontSize: 15,
-                        fontWeight: 700,
-                        color: "#111827",
-                        marginBottom: 4,
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {product.name}
-                    </h3>
-                    {product.description && (
-                      <p
-                        style={{
-                          fontSize: 12,
-                          color: "#9CA3AF",
-                          marginBottom: 10,
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {product.description}
-                      </p>
-                    )}
-
-                    {/* Price */}
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "baseline",
-                        gap: 8,
-                        marginBottom: 8,
-                      }}
-                    >
-                      <span
-                        style={{
-                          fontSize: 17,
-                          fontWeight: 800,
-                          color: "#1D4ED8",
-                        }}
-                      >
-                        {formatRupiah(product.price)}
-                      </span>
-                      {product.original_price && (
-                        <span
-                          style={{
-                            fontSize: 12,
-                            color: "#9CA3AF",
-                            textDecoration: "line-through",
-                          }}
-                        >
-                          {formatRupiah(product.original_price)}
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Stock */}
-                    <p
-                      style={{
-                        fontSize: 12,
-                        color: "#6B7280",
-                        marginBottom: 14,
-                      }}
-                    >
-                      {product.stock === null
-                        ? "📦 Stok: Unlimited"
-                        : product.stock === 0
-                          ? "❌ Stok habis"
-                          : `📦 Stok: ${product.stock}`}
-                    </p>
-
-                    {/* Actions */}
-                    <div style={{ display: "flex", gap: 8 }}>
-                      <button
-                        onClick={() => openEdit(product)}
-                        style={{
-                          flex: 1,
-                          padding: "8px",
-                          background: "#EFF6FF",
-                          color: "#1D4ED8",
-                          border: "1px solid #BFDBFE",
-                          borderRadius: 7,
-                          fontSize: 13,
-                          fontWeight: 600,
-                          cursor: "pointer",
-                        }}
-                      >
-                        ✏️ Edit
-                      </button>
-                      <button
-                        onClick={() => void handleToggle(product)}
-                        style={{
-                          flex: 1,
-                          padding: "8px",
-                          background: product.is_active ? "#F3F4F6" : "#ECFDF5",
-                          color: product.is_active ? "#6B7280" : "#065F46",
-                          border: `1px solid ${product.is_active ? "#E5E7EB" : "#6EE7B7"}`,
-                          borderRadius: 7,
-                          fontSize: 13,
-                          fontWeight: 600,
-                          cursor: "pointer",
-                        }}
-                      >
-                        {product.is_active ? "⏸ Nonaktif" : "▶ Aktifkan"}
-                      </button>
-                      <button
-                        onClick={() => setDeleteId(product.id)}
-                        style={{
-                          padding: "8px 12px",
-                          background: "#FEF2F2",
-                          color: "#DC2626",
-                          border: "1px solid #FCA5A5",
-                          borderRadius: 7,
-                          fontSize: 13,
-                          cursor: "pointer",
-                        }}
-                      >
-                        🗑️
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          {/* Pagination */}
-          {pagination.total_pages > 1 && (
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "center",
-                gap: 8,
-                marginTop: 4,
-              }}
-            >
-              <PageBtn
-                label="←"
-                disabled={page === 1}
-                onClick={() => setPage((p) => p - 1)}
-              />
-              {Array.from(
-                { length: pagination.total_pages },
-                (_, i) => i + 1,
-              ).map((p) => (
-                <PageBtn
-                  key={p}
-                  label={String(p)}
-                  active={p === page}
-                  onClick={() => setPage(p)}
-                />
-              ))}
-              <PageBtn
-                label="→"
-                disabled={page === pagination.total_pages}
-                onClick={() => setPage((p) => p + 1)}
-              />
-            </div>
-          )}
-        </>
-      )}
-
-      {/* ==========================================
-          PRODUCT FORM MODAL
-      ========================================== */}
-      {modalOpen && (
-        <div
-          onClick={closeModal}
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.5)",
-            zIndex: 1000,
-            display: "flex",
-            alignItems: "flex-start",
-            justifyContent: "center",
-            padding: "24px 16px",
-            overflowY: "auto",
-          }}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              background: "#fff",
-              borderRadius: 16,
-              width: "100%",
-              maxWidth: 560,
-              boxShadow: "0 20px 60px rgba(0,0,0,0.2)",
-              marginBottom: 24,
-            }}
-          >
-            {/* Header */}
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                padding: "18px 24px",
-                borderBottom: "1px solid #E5E7EB",
-                position: "sticky",
-                top: 0,
-                background: "#fff",
-                zIndex: 1,
-                borderRadius: "16px 16px 0 0",
-              }}
-            >
-              <h3 style={{ fontSize: 17, fontWeight: 700 }}>
-                {editProduct ? "Edit Produk" : "Tambah Produk Baru"}
-              </h3>
-              <button
-                onClick={closeModal}
-                disabled={saving}
-                style={{
-                  width: 32,
-                  height: 32,
-                  borderRadius: 8,
-                  border: "1px solid #E5E7EB",
-                  background: "#F9FAFB",
-                  fontSize: 16,
-                  cursor: "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                ✕
-              </button>
-            </div>
-
-            {/* Form */}
-            <form
-              onSubmit={(e) => void handleSubmit(e)}
-              style={{
-                padding: "24px",
-                display: "flex",
-                flexDirection: "column",
-                gap: 18,
-              }}
-            >
-              {/* Image upload */}
-              <div>
-                <label style={labelStyle}>Gambar Produk</label>
-                <div
-                  onClick={() => fileInputRef.current?.click()}
-                  style={{
-                    border: "2px dashed #D1D5DB",
-                    borderRadius: 10,
-                    height: imagePreview ? "auto" : 120,
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "center",
-                    justifyContent: imagePreview ? "flex-start" : "center",
-                    gap: 8,
-                    cursor: "pointer",
-                    background: "#F9FAFB",
-                    overflow: "hidden",
-                    transition: "border-color 0.15s",
-                  }}
-                  onMouseOver={(e) =>
-                    ((e.currentTarget as HTMLDivElement).style.borderColor =
-                      "#3B82F6")
-                  }
-                  onMouseOut={(e) =>
-                    ((e.currentTarget as HTMLDivElement).style.borderColor =
-                      "#D1D5DB")
-                  }
-                >
-                  {imagePreview ? (
-                    <div style={{ position: "relative", width: "100%" }}>
-                      <img
-                        src={imagePreview}
-                        alt="Preview"
-                        style={{
-                          width: "100%",
-                          height: 180,
-                          objectFit: "cover",
-                        }}
-                      />
-                      <div
-                        style={{
-                          position: "absolute",
-                          inset: 0,
-                          background: "rgba(0,0,0,0.3)",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          opacity: 0,
-                          transition: "opacity 0.15s",
-                        }}
-                        onMouseOver={(e) =>
-                          ((e.currentTarget as HTMLDivElement).style.opacity =
-                            "1")
-                        }
-                        onMouseOut={(e) =>
-                          ((e.currentTarget as HTMLDivElement).style.opacity =
-                            "0")
-                        }
-                      >
-                        <p
-                          style={{
-                            color: "#fff",
-                            fontWeight: 700,
-                            fontSize: 14,
-                          }}
-                        >
-                          🖼️ Ganti Gambar
-                        </p>
-                      </div>
-                    </div>
-                  ) : (
-                    <>
-                      <span style={{ fontSize: 28 }}>🖼️</span>
-                      <p
-                        style={{
-                          fontSize: 13,
-                          color: "#6B7280",
-                          textAlign: "center",
-                        }}
-                      >
-                        Klik untuk upload gambar
-                      </p>
-                      <p style={{ fontSize: 11, color: "#9CA3AF" }}>
-                        JPEG, PNG, WebP — maks 5MB
-                      </p>
-                    </>
-                  )}
-                </div>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/jpeg,image/jpg,image/png,image/webp"
-                  onChange={handleImageChange}
-                  style={{ display: "none" }}
-                />
-              </div>
-
-              {/* Nama */}
-              <Field label="Nama Produk" required>
-                <input
-                  style={inputStyle}
-                  type="text"
-                  value={form.name}
-                  onChange={(e) => handleFormChange("name", e.target.value)}
-                  placeholder="Nama produk"
-                  required
-                />
-              </Field>
-
-              {/* Deskripsi */}
-              <Field label="Deskripsi">
-                <textarea
-                  style={{ ...inputStyle, minHeight: 80, resize: "vertical" }}
-                  value={form.description}
-                  onChange={(e) =>
-                    handleFormChange("description", e.target.value)
-                  }
-                  placeholder="Deskripsi singkat produk..."
-                />
-              </Field>
-
-              {/* Tipe produk */}
-              <Field label="Tipe Produk" required>
-                <div style={{ display: "flex", gap: 8 }}>
-                  {(["PHYSICAL", "DIGITAL", "BOTH"] as ProductType[]).map(
-                    (type) => {
-                      const cfg = PRODUCT_TYPE_CONFIG[type];
-                      return (
-                        <button
-                          key={type}
-                          type="button"
-                          onClick={() => handleFormChange("product_type", type)}
-                          style={{
-                            flex: 1,
-                            padding: "9px 8px",
-                            border: `2px solid ${form.product_type === type ? cfg.color : "#E5E7EB"}`,
-                            borderRadius: 8,
-                            background:
-                              form.product_type === type ? cfg.bg : "#fff",
-                            color:
-                              form.product_type === type
-                                ? cfg.color
-                                : "#6B7280",
-                            fontSize: 12,
-                            fontWeight: 700,
-                            cursor: "pointer",
-                            textAlign: "center",
-                          }}
-                        >
-                          {cfg.icon} {cfg.label}
-                        </button>
-                      );
-                    },
-                  )}
-                </div>
-              </Field>
-
-              {/* Harga */}
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "1fr 1fr",
-                  gap: 12,
-                }}
-              >
-                <Field label="Harga Jual" required>
-                  <div style={{ position: "relative" }}>
-                    <span style={prefixStyle}>Rp</span>
-                    <input
-                      style={{ ...inputStyle, paddingLeft: 36 }}
-                      type="number"
-                      min="0"
-                      value={form.price}
-                      onChange={(e) =>
-                        handleFormChange("price", e.target.value)
-                      }
-                      placeholder="0"
-                      required
-                    />
-                  </div>
-                </Field>
-                <Field label="Harga Coret">
-                  <div style={{ position: "relative" }}>
-                    <span style={prefixStyle}>Rp</span>
-                    <input
-                      style={{ ...inputStyle, paddingLeft: 36 }}
-                      type="number"
-                      min="0"
-                      value={form.original_price}
-                      onChange={(e) =>
-                        handleFormChange("original_price", e.target.value)
-                      }
-                      placeholder="0"
-                    />
-                  </div>
-                </Field>
-              </div>
-
-              {/* Stok — hanya untuk PHYSICAL / BOTH */}
-              {isPhysicalOrBoth && (
-                <Field label="Stok" required={false}>
-                  <input
-                    style={inputStyle}
-                    type="number"
-                    min="0"
-                    value={form.stock}
-                    onChange={(e) => handleFormChange("stock", e.target.value)}
-                    placeholder="Kosongkan jika unlimited"
-                  />
-                </Field>
-              )}
-
-              {/* Download — hanya untuk DIGITAL / BOTH */}
-              {isDigitalOrBoth && (
-                <>
-                  <Field
-                    label="URL Download"
-                    required={form.product_type === "DIGITAL"}
-                  >
-                    <input
-                      style={inputStyle}
-                      type="url"
-                      value={form.download_url}
-                      onChange={(e) =>
-                        handleFormChange("download_url", e.target.value)
-                      }
-                      placeholder="https://..."
-                    />
-                  </Field>
-                  <Field label="Link Aktif (jam)">
-                    <input
-                      style={inputStyle}
-                      type="number"
-                      min="1"
-                      max="8760"
-                      value={form.download_expires_hours}
-                      onChange={(e) =>
-                        handleFormChange(
-                          "download_expires_hours",
-                          e.target.value,
-                        )
-                      }
-                      placeholder="24"
-                    />
-                  </Field>
-                </>
-              )}
-
-              {/* Sort order + Aktif */}
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "1fr 1fr",
-                  gap: 12,
-                }}
-              >
-                <Field label="Urutan Tampil">
-                  <input
-                    style={inputStyle}
-                    type="number"
-                    min="0"
-                    value={form.sort_order}
-                    onChange={(e) =>
-                      handleFormChange("sort_order", e.target.value)
-                    }
-                    placeholder="0"
-                  />
-                </Field>
-                <Field label="Status">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      handleFormChange("is_active", !form.is_active)
-                    }
-                    style={{
-                      width: "100%",
-                      padding: "10px 14px",
-                      border: `1px solid ${form.is_active ? "#6EE7B7" : "#E5E7EB"}`,
-                      borderRadius: 8,
-                      background: form.is_active ? "#ECFDF5" : "#F9FAFB",
-                      color: form.is_active ? "#065F46" : "#6B7280",
-                      fontSize: 14,
-                      fontWeight: 600,
-                      cursor: "pointer",
-                      textAlign: "left",
-                    }}
-                  >
-                    {form.is_active ? "✅ Aktif" : "⏸ Nonaktif"}
-                  </button>
-                </Field>
-              </div>
-
-              {formError && (
-                <div
-                  style={{
-                    background: "#FEF2F2",
-                    border: "1px solid #FCA5A5",
-                    borderRadius: 8,
-                    padding: "10px 14px",
-                    color: "#DC2626",
-                    fontSize: 13,
-                  }}
-                >
-                  ❌ {formError}
-                </div>
-              )}
-
-              {/* Actions */}
-              <div style={{ display: "flex", gap: 10, paddingTop: 4 }}>
-                <button
-                  type="button"
-                  onClick={closeModal}
-                  disabled={saving}
-                  style={{
-                    flex: 1,
-                    padding: "11px",
-                    background: "transparent",
-                    color: "#6B7280",
-                    border: "1px solid #E5E7EB",
-                    borderRadius: 8,
-                    fontSize: 14,
-                    fontWeight: 600,
-                    cursor: saving ? "not-allowed" : "pointer",
-                  }}
-                >
-                  Batal
-                </button>
-                <button
-                  type="submit"
-                  disabled={saving}
-                  style={{
-                    flex: 2,
-                    padding: "11px",
-                    background: saving ? "#E5E7EB" : "#1D4ED8",
-                    color: saving ? "#9CA3AF" : "#fff",
-                    border: "none",
-                    borderRadius: 8,
-                    fontSize: 14,
-                    fontWeight: 700,
-                    cursor: saving ? "not-allowed" : "pointer",
-                  }}
-                >
-                  {saving
-                    ? "⏳ Menyimpan..."
-                    : editProduct
-                      ? "💾 Simpan Perubahan"
-                      : "➕ Tambah Produk"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* ==========================================
-          DELETE CONFIRM MODAL
-      ========================================== */}
-      {deleteId && (
-        <div
-          onClick={() => {
-            if (!deleting) setDeleteId(null);
-          }}
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.5)",
-            zIndex: 1000,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: 16,
-          }}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              background: "#fff",
-              borderRadius: 16,
-              width: "100%",
-              maxWidth: 380,
-              padding: "28px 24px",
-              textAlign: "center",
-              boxShadow: "0 20px 60px rgba(0,0,0,0.2)",
-            }}
-          >
-            <div
-              style={{
-                width: 56,
-                height: 56,
-                borderRadius: "50%",
-                background: "#FEE2E2",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: 24,
-                margin: "0 auto 16px",
-              }}
-            >
-              🗑️
-            </div>
-            <h3
-              style={{
-                fontSize: 17,
-                fontWeight: 700,
-                color: "#111827",
-                marginBottom: 8,
-              }}
-            >
-              Hapus Produk?
-            </h3>
-            <p
-              style={{
-                fontSize: 14,
-                color: "#6B7280",
-                lineHeight: 1.6,
-                marginBottom: 20,
-              }}
-            >
-              Produk yang dihapus tidak bisa dikembalikan. Data order yang sudah
-              ada tidak terpengaruh.
-            </p>
-            <div style={{ display: "flex", gap: 10 }}>
-              <button
-                onClick={() => setDeleteId(null)}
-                disabled={deleting}
-                style={{
-                  flex: 1,
-                  padding: "11px",
-                  background: "transparent",
-                  color: "#6B7280",
-                  border: "1px solid #E5E7EB",
-                  borderRadius: 8,
-                  fontSize: 14,
-                  fontWeight: 600,
-                  cursor: deleting ? "not-allowed" : "pointer",
-                }}
-              >
-                Batal
-              </button>
-              <button
-                onClick={() => void handleDelete()}
-                disabled={deleting}
-                style={{
-                  flex: 1,
-                  padding: "11px",
-                  background: deleting ? "#E5E7EB" : "#DC2626",
-                  color: deleting ? "#9CA3AF" : "#fff",
-                  border: "none",
-                  borderRadius: 8,
-                  fontSize: 14,
-                  fontWeight: 700,
-                  cursor: deleting ? "not-allowed" : "pointer",
-                }}
-              >
-                {deleting ? "⏳ Menghapus..." : "🗑️ Ya, Hapus"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <style>{`
-        @keyframes slideIn {
-          from { opacity: 0; transform: translateX(20px); }
-          to   { opacity: 1; transform: translateX(0); }
-        }
-        input[type=number]::-webkit-inner-spin-button,
-        input[type=number]::-webkit-outer-spin-button { opacity: 1; }
-      `}</style>
-    </div>
-  );
+}
+interface ApiResponse<T> {
+  success: boolean;
+  data: T;
+  message: string;
 }
 
+const LIMIT = 10;
+
+const adminGetProducts = async (page = 1, limit = LIMIT) => {
+  const res = await api.get<PaginatedResponse<Product>>(
+    `/admin/products?page=${page}&limit=${limit}`,
+  );
+  return res.data;
+};
+
+const adminCreateProduct = async (formData: FormData) => {
+  const res = await api.post<ApiResponse<Product>>(
+    "/admin/products",
+    formData,
+    {
+      headers: { "Content-Type": "multipart/form-data" },
+    },
+  );
+  return res.data.data;
+};
+
+const adminUpdateProduct = async (id: string, formData: FormData) => {
+  const res = await api.put<ApiResponse<Product>>(
+    `/admin/products/${id}`,
+    formData,
+    { headers: { "Content-Type": "multipart/form-data" } },
+  );
+  return res.data.data;
+};
+
+const adminDeleteProduct = async (id: string) => {
+  await api.delete(`/admin/products/${id}`);
+};
+
+const adminToggleProduct = async (id: string) => {
+  const res = await api.patch<ApiResponse<Product>>(
+    `/admin/products/${id}/toggle`,
+  );
+  return res.data.data;
+};
+
 // ==========================================
-// STYLE CONSTANTS
+// FORM FIELD COMPONENTS
 // ==========================================
 const inputStyle: React.CSSProperties = {
   width: "100%",
-  padding: "10px 14px",
+  padding: "9px 12px",
   border: "1px solid #E5E7EB",
   borderRadius: 8,
   fontSize: 14,
   outline: "none",
   background: "#fff",
   color: "#111827",
+  boxSizing: "border-box",
 };
 
 const labelStyle: React.CSSProperties = {
@@ -1213,23 +132,9 @@ const labelStyle: React.CSSProperties = {
   fontSize: 13,
   fontWeight: 600,
   color: "#374151",
-  marginBottom: 6,
+  marginBottom: 5,
 };
 
-const prefixStyle: React.CSSProperties = {
-  position: "absolute",
-  left: 12,
-  top: "50%",
-  transform: "translateY(-50%)",
-  fontSize: 13,
-  color: "#6B7280",
-  fontWeight: 600,
-  pointerEvents: "none",
-};
-
-// ==========================================
-// SUB COMPONENTS
-// ==========================================
 function Field({
   label,
   required,
@@ -1249,173 +154,1095 @@ function Field({
   );
 }
 
-function ProductSkeleton() {
+// ==========================================
+// PRODUCT FORM MODAL
+// ==========================================
+function ProductFormModal({
+  isOpen,
+  onClose,
+  editProduct,
+  onSuccess,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  editProduct: Product | null;
+  onSuccess: () => void;
+}) {
+  const [form, setForm] = useState<ProductForm>(EMPTY_FORM);
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Populate form saat edit
+  useEffect(() => {
+    if (editProduct) {
+      setForm({
+        name: editProduct.name,
+        description: editProduct.description ?? "",
+        price: String(editProduct.price),
+        original_price: editProduct.original_price
+          ? String(editProduct.original_price)
+          : "",
+        product_type: editProduct.product_type as ProductType,
+        stock: editProduct.stock !== null ? String(editProduct.stock) : "",
+        download_url: "",
+        download_expires_hours: "24",
+        is_active: editProduct.is_active,
+        sort_order: String(editProduct.sort_order),
+      });
+      setImagePreview(editProduct.image_url);
+    } else {
+      setForm(EMPTY_FORM);
+      setImagePreview(null);
+    }
+    setImageFile(null);
+    setError(null);
+  }, [editProduct, isOpen]);
+
+  const handleChange = (field: keyof ProductForm, value: string | boolean) => {
+    setForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImageFile(file);
+    setImagePreview(URL.createObjectURL(file));
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+
+    if (!form.name.trim()) {
+      setError("Nama produk wajib diisi");
+      return;
+    }
+    if (!form.price || Number(form.price) < 0) {
+      setError("Harga tidak valid");
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const fd = new FormData();
+      fd.append("name", form.name.trim());
+      fd.append("description", form.description.trim());
+      fd.append("price", form.price);
+      fd.append("product_type", form.product_type);
+      fd.append("is_active", String(form.is_active));
+      fd.append("sort_order", form.sort_order || "0");
+
+      if (form.original_price) fd.append("original_price", form.original_price);
+
+      // Stok hanya untuk PHYSICAL / BOTH
+      if (
+        (form.product_type === "PHYSICAL" || form.product_type === "BOTH") &&
+        form.stock !== ""
+      ) {
+        fd.append("stock", form.stock);
+      }
+
+      // Download fields untuk DIGITAL / BOTH
+      if (form.product_type === "DIGITAL" || form.product_type === "BOTH") {
+        if (form.download_url.trim())
+          fd.append("download_url", form.download_url.trim());
+        fd.append(
+          "download_expires_hours",
+          form.download_expires_hours || "24",
+        );
+      }
+
+      if (imageFile) fd.append("image", imageFile);
+
+      if (editProduct) {
+        await adminUpdateProduct(editProduct.id, fd);
+      } else {
+        await adminCreateProduct(fd);
+      }
+
+      onSuccess();
+      onClose();
+    } catch (err: unknown) {
+      const axiosErr = err as { response?: { data?: { message?: string } } };
+      setError(axiosErr.response?.data?.message ?? "Gagal menyimpan produk");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const isDigital =
+    form.product_type === "DIGITAL" || form.product_type === "BOTH";
+  const isPhysical =
+    form.product_type === "PHYSICAL" || form.product_type === "BOTH";
+
   return (
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))",
-        gap: 16,
+    <Modal
+      isOpen={isOpen}
+      onClose={() => {
+        if (!submitting) onClose();
       }}
+      title={editProduct ? "Edit Produk" : "Tambah Produk"}
     >
-      {[...Array(6)].map((_, i) => (
-        <div
-          key={i}
-          style={{
-            background: "#fff",
-            border: "1px solid #E5E7EB",
-            borderRadius: 12,
-            overflow: "hidden",
-          }}
-        >
-          <div
-            style={{
-              height: 160,
-              background: "#F3F4F6",
-              animation: "pulse 1.5s ease-in-out infinite",
-              animationDelay: `${i * 0.1}s`,
-            }}
+      <form
+        onSubmit={(e) => void handleSubmit(e)}
+        style={{ display: "flex", flexDirection: "column", gap: 16 }}
+      >
+        {/* Nama */}
+        <Field label="Nama Produk" required>
+          <input
+            style={inputStyle}
+            type="text"
+            value={form.name}
+            onChange={(e) => handleChange("name", e.target.value)}
+            placeholder="Nama produk"
+            required
+            onFocus={(e) => (e.currentTarget.style.borderColor = "#3B82F6")}
+            onBlur={(e) => (e.currentTarget.style.borderColor = "#E5E7EB")}
           />
-          <div
-            style={{
-              padding: 16,
-              display: "flex",
-              flexDirection: "column",
-              gap: 10,
-            }}
-          >
-            {[100, 160, 80].map((w, j) => (
-              <div
-                key={j}
+        </Field>
+
+        {/* Deskripsi */}
+        <Field label="Deskripsi">
+          <textarea
+            style={{ ...inputStyle, minHeight: 72, resize: "vertical" }}
+            value={form.description}
+            onChange={(e) => handleChange("description", e.target.value)}
+            placeholder="Deskripsi produk (opsional)"
+            onFocus={(e) => (e.currentTarget.style.borderColor = "#3B82F6")}
+            onBlur={(e) => (e.currentTarget.style.borderColor = "#E5E7EB")}
+          />
+        </Field>
+
+        {/* Harga */}
+        <div
+          style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}
+        >
+          <Field label="Harga" required>
+            <input
+              style={inputStyle}
+              type="number"
+              min={0}
+              value={form.price}
+              onChange={(e) => handleChange("price", e.target.value)}
+              placeholder="150000"
+              required
+              onFocus={(e) => (e.currentTarget.style.borderColor = "#3B82F6")}
+              onBlur={(e) => (e.currentTarget.style.borderColor = "#E5E7EB")}
+            />
+          </Field>
+          <Field label="Harga Coret (opsional)">
+            <input
+              style={inputStyle}
+              type="number"
+              min={0}
+              value={form.original_price}
+              onChange={(e) => handleChange("original_price", e.target.value)}
+              placeholder="200000"
+              onFocus={(e) => (e.currentTarget.style.borderColor = "#3B82F6")}
+              onBlur={(e) => (e.currentTarget.style.borderColor = "#E5E7EB")}
+            />
+          </Field>
+        </div>
+
+        {/* Tipe Produk */}
+        <Field label="Tipe Produk" required>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {(["PHYSICAL", "DIGITAL", "BOTH"] as ProductType[]).map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => handleChange("product_type", t)}
                 style={{
-                  height: 14,
-                  width: w,
-                  borderRadius: 6,
-                  background: "#F3F4F6",
-                  animation: "pulse 1.5s ease-in-out infinite",
+                  padding: "8px 14px",
+                  border: `2px solid ${form.product_type === t ? TYPE_STYLE[t].color : "#E5E7EB"}`,
+                  borderRadius: 8,
+                  background:
+                    form.product_type === t ? TYPE_STYLE[t].bg : "#fff",
+                  color:
+                    form.product_type === t ? TYPE_STYLE[t].color : "#6B7280",
+                  fontSize: 13,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  transition: "all 0.15s",
                 }}
-              />
+              >
+                {TYPE_STYLE[t].label}
+              </button>
             ))}
           </div>
+        </Field>
+
+        {/* Stok — hanya untuk PHYSICAL/BOTH */}
+        {isPhysical && (
+          <Field label="Stok (kosongkan = unlimited)">
+            <input
+              style={inputStyle}
+              type="number"
+              min={0}
+              value={form.stock}
+              onChange={(e) => handleChange("stock", e.target.value)}
+              placeholder="Contoh: 50"
+              onFocus={(e) => (e.currentTarget.style.borderColor = "#3B82F6")}
+              onBlur={(e) => (e.currentTarget.style.borderColor = "#E5E7EB")}
+            />
+          </Field>
+        )}
+
+        {/* Download — hanya untuk DIGITAL/BOTH */}
+        {isDigital && (
+          <>
+            <Field label="URL Download">
+              <input
+                style={inputStyle}
+                type="url"
+                value={form.download_url}
+                onChange={(e) => handleChange("download_url", e.target.value)}
+                placeholder="https://drive.google.com/..."
+                onFocus={(e) => (e.currentTarget.style.borderColor = "#3B82F6")}
+                onBlur={(e) => (e.currentTarget.style.borderColor = "#E5E7EB")}
+              />
+              {editProduct?.product_type !== "PHYSICAL" && (
+                <p style={{ fontSize: 12, color: "#9CA3AF", marginTop: 4 }}>
+                  Kosongkan jika tidak ingin mengubah URL download
+                </p>
+              )}
+            </Field>
+            <Field label="Link Aktif (jam)">
+              <input
+                style={inputStyle}
+                type="number"
+                min={1}
+                max={8760}
+                value={form.download_expires_hours}
+                onChange={(e) =>
+                  handleChange("download_expires_hours", e.target.value)
+                }
+                placeholder="24"
+                onFocus={(e) => (e.currentTarget.style.borderColor = "#3B82F6")}
+                onBlur={(e) => (e.currentTarget.style.borderColor = "#E5E7EB")}
+              />
+              <p style={{ fontSize: 12, color: "#9CA3AF", marginTop: 4 }}>
+                Berapa jam link download aktif setelah pembayaran (default: 24
+                jam)
+              </p>
+            </Field>
+          </>
+        )}
+
+        {/* Gambar */}
+        <Field label="Gambar Produk">
+          <div
+            onClick={() => fileInputRef.current?.click()}
+            style={{
+              border: "2px dashed #E5E7EB",
+              borderRadius: 10,
+              padding: 16,
+              textAlign: "center",
+              cursor: "pointer",
+              transition: "border-color 0.15s",
+              background: "#F9FAFB",
+            }}
+            onMouseOver={(e) =>
+              ((e.currentTarget as HTMLDivElement).style.borderColor =
+                "#3B82F6")
+            }
+            onMouseOut={(e) =>
+              ((e.currentTarget as HTMLDivElement).style.borderColor =
+                "#E5E7EB")
+            }
+          >
+            {imagePreview ? (
+              <div>
+                <img
+                  src={imagePreview}
+                  alt="Preview"
+                  style={{
+                    maxHeight: 120,
+                    maxWidth: "100%",
+                    borderRadius: 8,
+                    objectFit: "cover",
+                    margin: "0 auto",
+                  }}
+                />
+                <p
+                  style={{
+                    fontSize: 12,
+                    color: "#6B7280",
+                    marginTop: 8,
+                  }}
+                >
+                  Klik untuk ganti gambar
+                </p>
+              </div>
+            ) : (
+              <div>
+                <p style={{ fontSize: 24, marginBottom: 8 }}>🖼️</p>
+                <p style={{ fontSize: 14, color: "#6B7280" }}>
+                  Klik untuk upload gambar
+                </p>
+                <p style={{ fontSize: 12, color: "#9CA3AF", marginTop: 4 }}>
+                  JPEG, PNG, WebP — maks. 5MB
+                </p>
+              </div>
+            )}
+          </div>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/jpeg,image/jpg,image/png,image/webp"
+            onChange={handleImageChange}
+            style={{ display: "none" }}
+          />
+        </Field>
+
+        {/* Sort order + Status */}
+        <div
+          style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}
+        >
+          <Field label="Urutan Tampil">
+            <input
+              style={inputStyle}
+              type="number"
+              min={0}
+              value={form.sort_order}
+              onChange={(e) => handleChange("sort_order", e.target.value)}
+              placeholder="0"
+              onFocus={(e) => (e.currentTarget.style.borderColor = "#3B82F6")}
+              onBlur={(e) => (e.currentTarget.style.borderColor = "#E5E7EB")}
+            />
+          </Field>
+          <Field label="Status">
+            <button
+              type="button"
+              onClick={() => handleChange("is_active", !form.is_active)}
+              style={{
+                width: "100%",
+                padding: "9px 12px",
+                border: `2px solid ${form.is_active ? "#10B981" : "#E5E7EB"}`,
+                borderRadius: 8,
+                background: form.is_active ? "#ECFDF5" : "#F9FAFB",
+                color: form.is_active ? "#065F46" : "#6B7280",
+                fontSize: 13,
+                fontWeight: 700,
+                cursor: "pointer",
+                textAlign: "center",
+              }}
+            >
+              {form.is_active ? "✅ Aktif" : "⏸️ Nonaktif"}
+            </button>
+          </Field>
         </div>
-      ))}
-      <style>{`@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }`}</style>
-    </div>
+
+        {/* Error */}
+        {error && (
+          <div
+            style={{
+              background: "#FEF2F2",
+              border: "1px solid #FCA5A5",
+              borderRadius: 8,
+              padding: "10px 12px",
+              color: "#DC2626",
+              fontSize: 13,
+            }}
+          >
+            ❌ {error}
+          </div>
+        )}
+
+        {/* Actions */}
+        <div style={{ display: "flex", gap: 10, paddingTop: 4 }}>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={submitting}
+            style={{
+              flex: 1,
+              padding: "11px",
+              background: "transparent",
+              color: "#6B7280",
+              border: "1px solid #E5E7EB",
+              borderRadius: 8,
+              fontWeight: 600,
+              fontSize: 14,
+              cursor: "pointer",
+            }}
+          >
+            Batal
+          </button>
+          <button
+            type="submit"
+            disabled={submitting}
+            style={{
+              flex: 2,
+              padding: "11px",
+              background: "#3B82F6",
+              color: "#fff",
+              border: "none",
+              borderRadius: 8,
+              fontWeight: 700,
+              fontSize: 14,
+              cursor: submitting ? "not-allowed" : "pointer",
+              opacity: submitting ? 0.7 : 1,
+            }}
+          >
+            {submitting
+              ? "⏳ Menyimpan..."
+              : editProduct
+                ? "💾 Simpan Perubahan"
+                : "➕ Tambah Produk"}
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 
-function ErrorState({
-  message,
-  onRetry,
+// ==========================================
+// DELETE CONFIRM MODAL
+// ==========================================
+function DeleteModal({
+  isOpen,
+  onClose,
+  product,
+  onSuccess,
 }: {
-  message: string;
-  onRetry: () => void;
+  isOpen: boolean;
+  onClose: () => void;
+  product: Product | null;
+  onSuccess: () => void;
 }) {
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleDelete = async () => {
+    if (!product) return;
+    setDeleting(true);
+    setError(null);
+    try {
+      await adminDeleteProduct(product.id);
+      onSuccess();
+      onClose();
+    } catch (err: unknown) {
+      const axiosErr = err as { response?: { data?: { message?: string } } };
+      setError(axiosErr.response?.data?.message ?? "Gagal menghapus produk");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   return (
-    <div
-      style={{
-        background: "#FEF2F2",
-        border: "1px solid #FCA5A5",
-        borderRadius: 12,
-        padding: "32px",
-        textAlign: "center",
+    <Modal
+      isOpen={isOpen}
+      onClose={() => {
+        if (!deleting) onClose();
       }}
+      title="Hapus Produk"
     >
-      <p style={{ color: "#DC2626", fontSize: 15, marginBottom: 12 }}>
-        ❌ {message}
-      </p>
-      <button
-        onClick={onRetry}
-        style={{
-          padding: "8px 20px",
-          background: "#3B82F6",
-          color: "#fff",
-          border: "none",
-          borderRadius: 8,
-          fontSize: 14,
-          fontWeight: 600,
-          cursor: "pointer",
-        }}
-      >
-        Coba Lagi
-      </button>
-    </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <div
+          style={{
+            background: "#FEF2F2",
+            border: "1px solid #FCA5A5",
+            borderRadius: 8,
+            padding: "14px 16px",
+          }}
+        >
+          <p style={{ fontSize: 14, color: "#991B1B", lineHeight: 1.6 }}>
+            Hapus produk <strong>"{product?.name}"</strong>? Tindakan ini tidak
+            dapat dibatalkan. Gambar produk juga akan dihapus dari storage.
+          </p>
+        </div>
+        {error && <p style={{ fontSize: 13, color: "#DC2626" }}>❌ {error}</p>}
+        <div style={{ display: "flex", gap: 10 }}>
+          <button
+            onClick={onClose}
+            disabled={deleting}
+            style={{
+              flex: 1,
+              padding: "11px",
+              background: "transparent",
+              color: "#6B7280",
+              border: "1px solid #E5E7EB",
+              borderRadius: 8,
+              fontWeight: 600,
+              fontSize: 14,
+              cursor: "pointer",
+            }}
+          >
+            Batal
+          </button>
+          <button
+            onClick={() => void handleDelete()}
+            disabled={deleting}
+            style={{
+              flex: 1,
+              padding: "11px",
+              background: "#EF4444",
+              color: "#fff",
+              border: "none",
+              borderRadius: 8,
+              fontWeight: 700,
+              fontSize: 14,
+              cursor: deleting ? "not-allowed" : "pointer",
+              opacity: deleting ? 0.7 : 1,
+            }}
+          >
+            {deleting ? "⏳ Menghapus..." : "🗑️ Ya, Hapus"}
+          </button>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
-function EmptyState({ onAdd }: { onAdd: () => void }) {
-  return (
-    <div
-      style={{
-        background: "#fff",
-        border: "1px solid #E5E7EB",
-        borderRadius: 12,
-        padding: "64px 32px",
-        textAlign: "center",
-      }}
-    >
-      <span style={{ fontSize: 48 }}>📦</span>
-      <p
-        style={{
-          fontSize: 16,
-          fontWeight: 700,
-          color: "#374151",
-          margin: "12px 0 6px",
-        }}
-      >
-        Belum ada produk
-      </p>
-      <p style={{ fontSize: 14, color: "#9CA3AF", marginBottom: 20 }}>
-        Tambahkan produk pertama Anda sekarang
-      </p>
-      <button
-        onClick={onAdd}
-        style={{
-          padding: "10px 24px",
-          background: "#1D4ED8",
-          color: "#fff",
-          border: "none",
-          borderRadius: 8,
-          fontSize: 14,
-          fontWeight: 700,
-          cursor: "pointer",
-        }}
-      >
-        + Tambah Produk
-      </button>
-    </div>
-  );
-}
+// ==========================================
+// ADMIN PRODUCTS PAGE
+// ==========================================
+export default function AdminProductsPage() {
+  const [products, setProducts] = useState<Product[]>([]);
+  const [pagination, setPagination] = useState({
+    total: 0,
+    page: 1,
+    limit: LIMIT,
+    total_pages: 0,
+  });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
 
-function PageBtn({
-  label,
-  active,
-  disabled,
-  onClick,
-}: {
-  label: string;
-  active?: boolean;
-  disabled?: boolean;
-  onClick: () => void;
-}) {
+  // Modals
+  const [formModal, setFormModal] = useState(false);
+  const [editProduct, setEditProduct] = useState<Product | null>(null);
+  const [deleteModal, setDeleteModal] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Product | null>(null);
+
+  // Toggle loading per-product
+  const [togglingId, setTogglingId] = useState<string | null>(null);
+
+  const fetchProducts = useCallback(async (p = 1) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await adminGetProducts(p, LIMIT);
+      setProducts(result.data);
+      setPagination(result.pagination);
+    } catch {
+      setError("Gagal memuat produk");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void fetchProducts(page);
+  }, [page, fetchProducts]);
+
+  const handleToggle = async (product: Product) => {
+    setTogglingId(product.id);
+    try {
+      const updated = await adminToggleProduct(product.id);
+      setProducts((prev) =>
+        prev.map((p) => (p.id === updated.id ? updated : p)),
+      );
+    } catch {
+      alert("Gagal mengubah status produk");
+    } finally {
+      setTogglingId(null);
+    }
+  };
+
+  const openEdit = (product: Product) => {
+    setEditProduct(product);
+    setFormModal(true);
+  };
+
+  const openDelete = (product: Product) => {
+    setDeleteTarget(product);
+    setDeleteModal(true);
+  };
+
+  const openAdd = () => {
+    setEditProduct(null);
+    setFormModal(true);
+  };
+
   return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      style={{
-        minWidth: 34,
-        height: 34,
-        padding: "0 8px",
-        borderRadius: 8,
-        border: active ? "none" : "1px solid #E5E7EB",
-        background: active ? "#1D4ED8" : disabled ? "#F9FAFB" : "#fff",
-        color: active ? "#fff" : disabled ? "#D1D5DB" : "#374151",
-        fontSize: 13,
-        fontWeight: active ? 700 : 500,
-        cursor: disabled ? "not-allowed" : "pointer",
-      }}
-    >
-      {label}
-    </button>
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      {/* ---- Header ---- */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "flex-start",
+          flexWrap: "wrap",
+          gap: 12,
+        }}
+      >
+        <div>
+          <h2 style={{ fontSize: 20, fontWeight: 800, color: "#111827" }}>
+            Produk
+          </h2>
+          <p style={{ fontSize: 14, color: "#6B7280", marginTop: 2 }}>
+            {pagination.total} total produk
+          </p>
+        </div>
+        <button
+          onClick={openAdd}
+          style={{
+            padding: "9px 18px",
+            background: "#3B82F6",
+            color: "#fff",
+            border: "none",
+            borderRadius: 8,
+            fontWeight: 700,
+            fontSize: 14,
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+          }}
+        >
+          ➕ Tambah Produk
+        </button>
+      </div>
+
+      {/* ---- Table ---- */}
+      <div
+        style={{
+          background: "#fff",
+          border: "1px solid #E5E7EB",
+          borderRadius: 12,
+          overflow: "hidden",
+        }}
+      >
+        {loading ? (
+          <div style={{ padding: "60px", textAlign: "center" }}>
+            <div
+              style={{
+                width: 32,
+                height: 32,
+                border: "3px solid #E5E7EB",
+                borderTopColor: "#3B82F6",
+                borderRadius: "50%",
+                animation: "spin 0.8s linear infinite",
+                margin: "0 auto 12px",
+              }}
+            />
+            <p style={{ color: "#9CA3AF", fontSize: 14 }}>Memuat produk...</p>
+            <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
+          </div>
+        ) : error ? (
+          <div style={{ padding: 24, textAlign: "center" }}>
+            <p style={{ color: "#EF4444", fontSize: 14 }}>❌ {error}</p>
+            <button
+              onClick={() => void fetchProducts(page)}
+              style={{
+                marginTop: 12,
+                padding: "8px 16px",
+                background: "#3B82F6",
+                color: "#fff",
+                border: "none",
+                borderRadius: 8,
+                cursor: "pointer",
+                fontSize: 13,
+              }}
+            >
+              Coba Lagi
+            </button>
+          </div>
+        ) : products.length === 0 ? (
+          <div
+            style={{
+              padding: "60px",
+              textAlign: "center",
+              color: "#9CA3AF",
+              fontSize: 14,
+            }}
+          >
+            <p style={{ fontSize: 36, marginBottom: 12 }}>📦</p>
+            <p>Belum ada produk. Tambah produk pertama Anda!</p>
+            <button
+              onClick={openAdd}
+              style={{
+                marginTop: 16,
+                padding: "9px 20px",
+                background: "#3B82F6",
+                color: "#fff",
+                border: "none",
+                borderRadius: 8,
+                fontWeight: 600,
+                cursor: "pointer",
+                fontSize: 14,
+              }}
+            >
+              ➕ Tambah Produk
+            </button>
+          </div>
+        ) : (
+          <div style={{ overflowX: "auto" }}>
+            <table
+              style={{
+                width: "100%",
+                borderCollapse: "collapse",
+                fontSize: 14,
+              }}
+            >
+              <thead>
+                <tr
+                  style={{
+                    background: "#F9FAFB",
+                    borderBottom: "1px solid #E5E7EB",
+                  }}
+                >
+                  {[
+                    "Produk",
+                    "Tipe",
+                    "Harga",
+                    "Stok",
+                    "Urutan",
+                    "Status",
+                    "Aksi",
+                  ].map((h) => (
+                    <th
+                      key={h}
+                      style={{
+                        padding: "11px 16px",
+                        fontSize: 12,
+                        fontWeight: 600,
+                        color: "#6B7280",
+                        textAlign: "left",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {products.map((product) => {
+                  const typeCfg =
+                    TYPE_STYLE[product.product_type as ProductType];
+                  return (
+                    <tr
+                      key={product.id}
+                      style={{ borderBottom: "1px solid #F3F4F6" }}
+                    >
+                      {/* Produk */}
+                      <td style={{ padding: "13px 16px" }}>
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 12,
+                          }}
+                        >
+                          {product.image_url ? (
+                            <img
+                              src={product.image_url}
+                              alt={product.name}
+                              style={{
+                                width: 44,
+                                height: 44,
+                                borderRadius: 8,
+                                objectFit: "cover",
+                                flexShrink: 0,
+                                border: "1px solid #E5E7EB",
+                              }}
+                            />
+                          ) : (
+                            <div
+                              style={{
+                                width: 44,
+                                height: 44,
+                                borderRadius: 8,
+                                background: "#F3F4F6",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                fontSize: 18,
+                                flexShrink: 0,
+                              }}
+                            >
+                              📦
+                            </div>
+                          )}
+                          <div>
+                            <p
+                              style={{
+                                fontWeight: 600,
+                                color: "#111827",
+                                fontSize: 14,
+                                marginBottom: 2,
+                              }}
+                            >
+                              {product.name}
+                            </p>
+                            {product.description && (
+                              <p
+                                style={{
+                                  fontSize: 12,
+                                  color: "#9CA3AF",
+                                  maxWidth: 200,
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                  whiteSpace: "nowrap",
+                                }}
+                              >
+                                {product.description}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* Tipe */}
+                      <td style={{ padding: "13px 16px" }}>
+                        <span
+                          style={{
+                            display: "inline-block",
+                            padding: "3px 10px",
+                            borderRadius: 99,
+                            fontSize: 12,
+                            fontWeight: 700,
+                            color: typeCfg.color,
+                            background: typeCfg.bg,
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {typeCfg.label}
+                        </span>
+                      </td>
+
+                      {/* Harga */}
+                      <td
+                        style={{ padding: "13px 16px", whiteSpace: "nowrap" }}
+                      >
+                        <p style={{ fontWeight: 700, color: "#111827" }}>
+                          {formatRupiah(product.price)}
+                        </p>
+                        {product.original_price && (
+                          <p
+                            style={{
+                              fontSize: 12,
+                              color: "#9CA3AF",
+                              textDecoration: "line-through",
+                            }}
+                          >
+                            {formatRupiah(product.original_price)}
+                          </p>
+                        )}
+                      </td>
+
+                      {/* Stok */}
+                      <td style={{ padding: "13px 16px" }}>
+                        {product.stock === null ? (
+                          <span style={{ fontSize: 13, color: "#9CA3AF" }}>
+                            ∞ Unlimited
+                          </span>
+                        ) : (
+                          <span
+                            style={{
+                              fontSize: 13,
+                              fontWeight: 700,
+                              color: product.stock < 5 ? "#EF4444" : "#111827",
+                            }}
+                          >
+                            {product.stock}
+                          </span>
+                        )}
+                      </td>
+
+                      {/* Sort order */}
+                      <td
+                        style={{
+                          padding: "13px 16px",
+                          fontSize: 13,
+                          color: "#6B7280",
+                          textAlign: "center",
+                        }}
+                      >
+                        {product.sort_order}
+                      </td>
+
+                      {/* Status toggle */}
+                      <td style={{ padding: "13px 16px" }}>
+                        <button
+                          onClick={() => void handleToggle(product)}
+                          disabled={togglingId === product.id}
+                          style={{
+                            padding: "4px 12px",
+                            borderRadius: 99,
+                            fontSize: 12,
+                            fontWeight: 700,
+                            border: "none",
+                            cursor:
+                              togglingId === product.id
+                                ? "not-allowed"
+                                : "pointer",
+                            opacity: togglingId === product.id ? 0.6 : 1,
+                            background: product.is_active
+                              ? "#D1FAE5"
+                              : "#F3F4F6",
+                            color: product.is_active ? "#065F46" : "#6B7280",
+                            transition: "all 0.15s",
+                          }}
+                        >
+                          {togglingId === product.id
+                            ? "..."
+                            : product.is_active
+                              ? "✅ Aktif"
+                              : "⏸️ Nonaktif"}
+                        </button>
+                      </td>
+
+                      {/* Aksi */}
+                      <td style={{ padding: "13px 16px" }}>
+                        <div style={{ display: "flex", gap: 6 }}>
+                          <button
+                            onClick={() => openEdit(product)}
+                            style={{
+                              padding: "6px 12px",
+                              background: "#EFF6FF",
+                              color: "#3B82F6",
+                              border: "1px solid #BFDBFE",
+                              borderRadius: 6,
+                              fontSize: 12,
+                              fontWeight: 600,
+                              cursor: "pointer",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            ✏️ Edit
+                          </button>
+                          <button
+                            onClick={() => openDelete(product)}
+                            style={{
+                              padding: "6px 12px",
+                              background: "#FEF2F2",
+                              color: "#EF4444",
+                              border: "1px solid #FCA5A5",
+                              borderRadius: 6,
+                              fontSize: 12,
+                              fontWeight: 600,
+                              cursor: "pointer",
+                            }}
+                          >
+                            🗑️
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* ---- Pagination ---- */}
+      {pagination.total_pages > 1 && (
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            flexWrap: "wrap",
+            gap: 12,
+          }}
+        >
+          <p style={{ fontSize: 13, color: "#6B7280" }}>
+            Menampilkan {Math.min((page - 1) * LIMIT + 1, pagination.total)}–
+            {Math.min(page * LIMIT, pagination.total)} dari {pagination.total}{" "}
+            produk
+          </p>
+          <div style={{ display: "flex", gap: 6 }}>
+            <button
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page === 1}
+              style={{
+                padding: "7px 14px",
+                border: "1px solid #E5E7EB",
+                borderRadius: 8,
+                background: "#fff",
+                fontSize: 13,
+                cursor: page === 1 ? "not-allowed" : "pointer",
+                opacity: page === 1 ? 0.5 : 1,
+                fontWeight: 500,
+              }}
+            >
+              ← Prev
+            </button>
+            {Array.from(
+              { length: Math.min(5, pagination.total_pages) },
+              (_, i) => {
+                let p: number;
+                if (pagination.total_pages <= 5) p = i + 1;
+                else if (page <= 3) p = i + 1;
+                else if (page >= pagination.total_pages - 2)
+                  p = pagination.total_pages - 4 + i;
+                else p = page - 2 + i;
+                return (
+                  <button
+                    key={p}
+                    onClick={() => setPage(p)}
+                    style={{
+                      padding: "7px 12px",
+                      border: `1px solid ${p === page ? "#3B82F6" : "#E5E7EB"}`,
+                      borderRadius: 8,
+                      background: p === page ? "#3B82F6" : "#fff",
+                      color: p === page ? "#fff" : "#374151",
+                      fontSize: 13,
+                      cursor: "pointer",
+                      fontWeight: p === page ? 700 : 500,
+                      minWidth: 36,
+                    }}
+                  >
+                    {p}
+                  </button>
+                );
+              },
+            )}
+            <button
+              onClick={() =>
+                setPage((p) => Math.min(pagination.total_pages, p + 1))
+              }
+              disabled={page === pagination.total_pages}
+              style={{
+                padding: "7px 14px",
+                border: "1px solid #E5E7EB",
+                borderRadius: 8,
+                background: "#fff",
+                fontSize: 13,
+                cursor:
+                  page === pagination.total_pages ? "not-allowed" : "pointer",
+                opacity: page === pagination.total_pages ? 0.5 : 1,
+                fontWeight: 500,
+              }}
+            >
+              Next →
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ---- Modals ---- */}
+      <ProductFormModal
+        isOpen={formModal}
+        onClose={() => setFormModal(false)}
+        editProduct={editProduct}
+        onSuccess={() => void fetchProducts(page)}
+      />
+      <DeleteModal
+        isOpen={deleteModal}
+        onClose={() => setDeleteModal(false)}
+        product={deleteTarget}
+        onSuccess={() => void fetchProducts(page)}
+      />
+    </div>
   );
 }

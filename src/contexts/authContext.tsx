@@ -7,10 +7,7 @@ import {
 } from "react";
 import { adminLogin, getAdminMe } from "@/services/api";
 
-// ==========================================
-// TYPES
-// ==========================================
-export interface AdminUser {
+interface AdminUser {
   id: string;
   username: string;
   email: string;
@@ -25,20 +22,13 @@ interface AuthContextType {
   isAuthenticated: boolean;
 }
 
-// ==========================================
-// CONTEXT
-// ==========================================
 const AuthContext = createContext<AuthContextType | null>(null);
 
-// ==========================================
-// PROVIDER
-// ==========================================
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AdminUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Cek token saat mount
   useEffect(() => {
     const check = async () => {
       const token = localStorage.getItem("admin_token");
@@ -68,9 +58,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(result.admin);
         return true;
       } catch (err: unknown) {
-        const axiosErr = err as {
-          response?: { data?: { message?: string } };
-        };
+        const axiosErr = err as { response?: { data?: { message?: string } } };
         setError(
           axiosErr.response?.data?.message ?? "Email atau password salah",
         );
@@ -97,9 +85,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
-// ==========================================
-// HOOK — satu-satunya cara akses auth
-// ==========================================
 export function useAuth(): AuthContextType {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error("useAuth must be used within AuthProvider");
