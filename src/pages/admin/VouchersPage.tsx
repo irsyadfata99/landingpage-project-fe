@@ -3,7 +3,7 @@ import api from "@/services/axios.config";
 import Modal from "@/components/common/Modal";
 
 // ==========================================
-// TYPES
+// TYPES — sesuai backend schema
 // ==========================================
 type VoucherType = "PERCENT" | "NOMINAL";
 
@@ -12,12 +12,10 @@ interface Voucher {
   code: string;
   type: VoucherType;
   value: number;
-  min_purchase: number | null;
-  max_discount: number | null;
-  quota: number | null;
+  minimum_order: number;
+  max_uses: number;
   used_count: number;
-  start_date: string | null;
-  end_date: string | null;
+  expired_at: string;
   is_active: boolean;
   created_at: string;
 }
@@ -26,11 +24,9 @@ interface VoucherForm {
   code: string;
   type: VoucherType;
   value: string;
-  min_purchase: string;
-  max_discount: string;
-  quota: string;
-  start_date: string;
-  end_date: string;
+  minimum_order: string;
+  max_uses: string;
+  expired_at: string;
   is_active: boolean;
 }
 
@@ -38,11 +34,9 @@ const EMPTY_FORM: VoucherForm = {
   code: "",
   type: "PERCENT",
   value: "",
-  min_purchase: "",
-  max_discount: "",
-  quota: "",
-  start_date: "",
-  end_date: "",
+  minimum_order: "",
+  max_uses: "1",
+  expired_at: "",
   is_active: true,
 };
 
@@ -65,11 +59,22 @@ const formatDate = (dateStr: string | null) => {
   });
 };
 
+const isExpired = (v: Voucher) => new Date(v.expired_at) < new Date();
+const isQuotaFull = (v: Voucher) => v.used_count >= v.max_uses;
+
 const generateCode = () => {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
   return Array.from({ length: 8 }, () =>
     chars.charAt(Math.floor(Math.random() * chars.length)),
   ).join("");
+};
+
+// Default expired_at: 30 hari dari sekarang, format datetime-local
+const defaultExpiredAt = () => {
+  const d = new Date();
+  d.setDate(d.getDate() + 30);
+  // Format: YYYY-MM-DDTHH:mm
+  return d.toISOString().slice(0, 16);
 };
 
 // ==========================================
@@ -144,21 +149,21 @@ function VoucherFormModal({
         code: editVoucher.code,
         type: editVoucher.type,
         value: String(editVoucher.value),
-        min_purchase: editVoucher.min_purchase
-          ? String(editVoucher.min_purchase)
+        minimum_order: editVoucher.minimum_order
+          ? String(editVoucher.minimum_order)
           : "",
-        max_discount: editVoucher.max_discount
-          ? String(editVoucher.max_discount)
-          : "",
-        quota: editVoucher.quota ? String(editVoucher.quota) : "",
-        start_date: editVoucher.start_date
-          ? editVoucher.start_date.slice(0, 16)
-          : "",
-        end_date: editVoucher.end_date ? editVoucher.end_date.slice(0, 16) : "",
+        max_uses: String(editVoucher.max_uses),
+        expired_at: editVoucher.expired_at
+          ? editVoucher.expired_at.slice(0, 16)
+          : defaultExpiredAt(),
         is_active: editVoucher.is_active,
       });
     } else {
-      setForm({ ...EMPTY_FORM, code: generateCode() });
+      setForm({
+        ...EMPTY_FORM,
+        code: generateCode(),
+        expired_at: defaultExpiredAt(),
+      });
     }
     setError(null);
   }, [editVoucher, isOpen]);
@@ -176,21 +181,22 @@ function VoucherFormModal({
       return setError("Nilai tidak valid");
     if (form.type === "PERCENT" && Number(form.value) > 100)
       return setError("Persentase maksimal 100%");
+    if (!form.expired_at) return setError("Tanggal expired wajib diisi");
+    if (!form.max_uses || Number(form.max_uses) < 1)
+      return setError("Kuota minimal 1");
 
     setSubmitting(true);
     try {
+      // Body sesuai backend: code, type, value, minimum_order, max_uses, expired_at, is_active
       const body: Record<string, unknown> = {
         code: form.code.trim().toUpperCase(),
         type: form.type,
         value: Number(form.value),
+        minimum_order: form.minimum_order ? Number(form.minimum_order) : 0,
+        max_uses: Number(form.max_uses),
+        expired_at: new Date(form.expired_at).toISOString(),
         is_active: form.is_active,
       };
-      if (form.min_purchase) body.min_purchase = Number(form.min_purchase);
-      if (form.max_discount) body.max_discount = Number(form.max_discount);
-      if (form.quota) body.quota = Number(form.quota);
-      if (form.start_date)
-        body.start_date = new Date(form.start_date).toISOString();
-      if (form.end_date) body.end_date = new Date(form.end_date).toISOString();
 
       if (editVoucher) {
         await api.put(`/admin/vouchers/${editVoucher.id}`, body);
@@ -229,6 +235,7 @@ function VoucherFormModal({
                 textTransform: "uppercase",
                 fontFamily: "monospace",
                 fontWeight: 700,
+                letterSpacing: "0.05em",
               }}
               value={form.code}
               onChange={(e) =>
@@ -289,6 +296,7 @@ function VoucherFormModal({
               ))}
             </div>
           </Field>
+
           <Field
             label={form.type === "PERCENT" ? "Persentase (%)" : "Nilai (Rp)"}
             required
@@ -308,7 +316,7 @@ function VoucherFormModal({
           </Field>
         </div>
 
-        {/* Min Purchase + Max Discount */}
+        {/* Minimum Order + Kuota */}
         <div
           style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}
         >
@@ -317,70 +325,45 @@ function VoucherFormModal({
               style={inputStyle}
               type="number"
               min={0}
-              value={form.min_purchase}
-              onChange={(e) => handleChange("min_purchase", e.target.value)}
+              value={form.minimum_order}
+              onChange={(e) => handleChange("minimum_order", e.target.value)}
               placeholder="100000"
               onFocus={(e) => (e.currentTarget.style.borderColor = "#3B82F6")}
               onBlur={(e) => (e.currentTarget.style.borderColor = "#E5E7EB")}
             />
           </Field>
-          {form.type === "PERCENT" && (
-            <Field label="Maks. Diskon (Rp)" hint="Kosongkan = tidak dibatasi">
-              <input
-                style={inputStyle}
-                type="number"
-                min={0}
-                value={form.max_discount}
-                onChange={(e) => handleChange("max_discount", e.target.value)}
-                placeholder="50000"
-                onFocus={(e) => (e.currentTarget.style.borderColor = "#3B82F6")}
-                onBlur={(e) => (e.currentTarget.style.borderColor = "#E5E7EB")}
-              />
-            </Field>
-          )}
-        </div>
 
-        {/* Kuota + Periode */}
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "1fr 1fr 1fr",
-            gap: 12,
-          }}
-        >
-          <Field label="Kuota" hint="Kosongkan = unlimited">
+          <Field
+            label="Maks. Pemakaian (Kuota)"
+            required
+            hint="Total berapa kali voucher bisa dipakai"
+          >
             <input
               style={inputStyle}
               type="number"
               min={1}
-              value={form.quota}
-              onChange={(e) => handleChange("quota", e.target.value)}
+              value={form.max_uses}
+              onChange={(e) => handleChange("max_uses", e.target.value)}
               placeholder="100"
-              onFocus={(e) => (e.currentTarget.style.borderColor = "#3B82F6")}
-              onBlur={(e) => (e.currentTarget.style.borderColor = "#E5E7EB")}
-            />
-          </Field>
-          <Field label="Mulai">
-            <input
-              style={inputStyle}
-              type="datetime-local"
-              value={form.start_date}
-              onChange={(e) => handleChange("start_date", e.target.value)}
-              onFocus={(e) => (e.currentTarget.style.borderColor = "#3B82F6")}
-              onBlur={(e) => (e.currentTarget.style.borderColor = "#E5E7EB")}
-            />
-          </Field>
-          <Field label="Berakhir">
-            <input
-              style={inputStyle}
-              type="datetime-local"
-              value={form.end_date}
-              onChange={(e) => handleChange("end_date", e.target.value)}
+              required
               onFocus={(e) => (e.currentTarget.style.borderColor = "#3B82F6")}
               onBlur={(e) => (e.currentTarget.style.borderColor = "#E5E7EB")}
             />
           </Field>
         </div>
+
+        {/* Expired At */}
+        <Field label="Berlaku Sampai" required>
+          <input
+            style={inputStyle}
+            type="datetime-local"
+            value={form.expired_at}
+            onChange={(e) => handleChange("expired_at", e.target.value)}
+            required
+            onFocus={(e) => (e.currentTarget.style.borderColor = "#3B82F6")}
+            onBlur={(e) => (e.currentTarget.style.borderColor = "#E5E7EB")}
+          />
+        </Field>
 
         {/* Status */}
         <Field label="Status">
@@ -500,7 +483,10 @@ function DeleteModal({
     <Modal
       isOpen={isOpen}
       onClose={() => {
-        if (!deleting) onClose();
+        if (!deleting) {
+          onClose();
+          setError(null);
+        }
       }}
       title="Hapus Voucher"
     >
@@ -583,7 +569,10 @@ export default function AdminVouchersPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await api.get<{ data: Voucher[] }>("/admin/vouchers");
+      const res = await api.get<{
+        data: Voucher[];
+        pagination: { total: number };
+      }>("/admin/vouchers?limit=100");
       setVouchers(res.data.data);
     } catch {
       setError("Gagal memuat data voucher");
@@ -611,12 +600,6 @@ export default function AdminVouchersPage() {
       setTogglingId(null);
     }
   };
-
-  const isExpired = (v: Voucher) =>
-    v.end_date ? new Date(v.end_date) < new Date() : false;
-
-  const isQuotaFull = (v: Voucher) =>
-    v.quota !== null && v.used_count >= v.quota;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
@@ -753,8 +736,8 @@ export default function AdminVouchersPage() {
                     "Kode",
                     "Tipe & Nilai",
                     "Min. Beli",
-                    "Kuota",
-                    "Periode",
+                    "Kuota Terpakai",
+                    "Berlaku Sampai",
                     "Status",
                     "Aksi",
                   ].map((h) => (
@@ -842,9 +825,6 @@ export default function AdminVouchersPage() {
                         </p>
                         <p style={{ fontSize: 12, color: "#9CA3AF" }}>
                           {v.type === "PERCENT" ? "Persentase" : "Nominal"}
-                          {v.max_discount
-                            ? ` · maks ${formatRupiah(v.max_discount)}`
-                            : ""}
                         </p>
                       </td>
 
@@ -856,7 +836,9 @@ export default function AdminVouchersPage() {
                           color: "#6B7280",
                         }}
                       >
-                        {v.min_purchase ? formatRupiah(v.min_purchase) : "-"}
+                        {v.minimum_order > 0
+                          ? formatRupiah(v.minimum_order)
+                          : "-"}
                       </td>
 
                       {/* Kuota */}
@@ -868,47 +850,39 @@ export default function AdminVouchersPage() {
                             color: "#111827",
                           }}
                         >
-                          {v.used_count}/{v.quota ?? "∞"}
+                          {v.used_count} / {v.max_uses}
                         </p>
-                        {v.quota && (
+                        <div
+                          style={{
+                            height: 4,
+                            background: "#F3F4F6",
+                            borderRadius: 99,
+                            marginTop: 4,
+                            width: 64,
+                          }}
+                        >
                           <div
                             style={{
-                              height: 4,
-                              background: "#F3F4F6",
+                              height: "100%",
+                              width: `${Math.min(100, (v.used_count / v.max_uses) * 100)}%`,
+                              background: full ? "#EF4444" : "#3B82F6",
                               borderRadius: 99,
-                              marginTop: 4,
-                              width: 64,
                             }}
-                          >
-                            <div
-                              style={{
-                                height: "100%",
-                                width: `${Math.min(100, (v.used_count / v.quota) * 100)}%`,
-                                background: full ? "#EF4444" : "#3B82F6",
-                                borderRadius: 99,
-                              }}
-                            />
-                          </div>
-                        )}
+                          />
+                        </div>
                       </td>
 
-                      {/* Periode */}
+                      {/* Expired at */}
                       <td
                         style={{
                           padding: "13px 16px",
-                          fontSize: 12,
-                          color: "#6B7280",
+                          fontSize: 13,
+                          color: expired ? "#EF4444" : "#6B7280",
                           whiteSpace: "nowrap",
+                          fontWeight: expired ? 600 : 400,
                         }}
                       >
-                        {v.start_date || v.end_date ? (
-                          <>
-                            <p>{formatDate(v.start_date)}</p>
-                            <p>s/d {formatDate(v.end_date)}</p>
-                          </>
-                        ) : (
-                          <span>Tidak dibatasi</span>
-                        )}
+                        {formatDate(v.expired_at)}
                       </td>
 
                       {/* Status */}

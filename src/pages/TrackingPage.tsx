@@ -108,7 +108,6 @@ const STATUS_CONFIG: Record<OrderStatus, StatusConfig> = {
   },
 };
 
-// Urutan timeline normal
 const TIMELINE_STEPS: OrderStatus[] = [
   "PENDING",
   "PAID",
@@ -298,7 +297,7 @@ export default function TrackingPage() {
   // Polling ref
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // ---- Fetch order ----
+  // ---- Fetch order via trackOrder (selalu dapat full data + items) ----
   const fetchOrder = useCallback(async (code: string, silent = false) => {
     if (!code.trim()) return;
     if (!silent) {
@@ -307,14 +306,8 @@ export default function TrackingPage() {
       setOrder(null);
     }
     try {
-      // Cek payment status juga (untuk auto-update PENDING → PAID)
-      let fetched: Order;
-      try {
-        const payStatus = await checkPaymentStatus(code);
-        fetched = payStatus as unknown as Order;
-      } catch {
-        fetched = await trackOrder(code);
-      }
+      // Selalu pakai trackOrder untuk mendapat full data termasuk items
+      const fetched = await trackOrder(code);
       setOrder(fetched);
     } catch {
       if (!silent)
@@ -324,25 +317,44 @@ export default function TrackingPage() {
     }
   }, []);
 
+  // ---- Cek status pembayaran lalu fetch ulang jika berubah ----
+  // Hanya dipakai untuk polling PENDING agar sinkron dengan Tripay
+  const checkAndRefresh = useCallback(
+    async (code: string) => {
+      try {
+        // checkPaymentStatus menerima order_code (backend: WHERE id::text = $1 OR order_code = $1)
+        const statusData = await checkPaymentStatus(code);
+        // Jika status berubah dari PENDING ke sesuatu yang lain, fetch ulang penuh
+        if (statusData.status !== "PENDING") {
+          await fetchOrder(code, true);
+        }
+      } catch {
+        // Silent fail — tidak perlu tampilkan error saat polling
+      }
+    },
+    [fetchOrder],
+  );
+
   // ---- Auto fetch saat ada initial code ----
   useEffect(() => {
     if (searchCode) void fetchOrder(searchCode);
   }, [searchCode, fetchOrder]);
 
-  // ---- Polling setiap 30 detik untuk PENDING / PAID ----
+  // ---- Polling setiap 30 detik untuk PENDING ----
+  // Untuk PAID tidak perlu polling karena status berikutnya (PROCESSING) diupdate admin manual
   useEffect(() => {
     if (pollingRef.current) clearInterval(pollingRef.current);
 
-    if (order && (order.status === "PENDING" || order.status === "PAID")) {
+    if (order?.status === "PENDING") {
       pollingRef.current = setInterval(() => {
-        void fetchOrder(order.order_code, true);
+        void checkAndRefresh(order.order_code);
       }, 30000);
     }
 
     return () => {
       if (pollingRef.current) clearInterval(pollingRef.current);
     };
-  }, [order, fetchOrder]);
+  }, [order?.status, order?.order_code, checkAndRefresh]);
 
   // ---- Handle search ----
   const handleSearch = (e: React.FormEvent) => {
@@ -729,7 +741,7 @@ export default function TrackingPage() {
                       gap: 12,
                     }}
                   >
-                    {order.items.map((item) => (
+                    {(order.items ?? []).map((item) => (
                       <div key={item.id}>
                         <div
                           style={{
@@ -1046,7 +1058,7 @@ export default function TrackingPage() {
                   </button>
                 )}
 
-                {/* CTA: Cek pembayaran (PENDING) */}
+                {/* CTA: Refresh status (PENDING) */}
                 {order.status === "PENDING" && (
                   <div
                     style={{
@@ -1087,8 +1099,8 @@ export default function TrackingPage() {
               </div>
             </div>
 
-            {/* Polling indicator */}
-            {(order.status === "PENDING" || order.status === "PAID") && (
+            {/* Polling indicator — hanya untuk PENDING */}
+            {order.status === "PENDING" && (
               <p
                 style={{
                   fontSize: 12,
