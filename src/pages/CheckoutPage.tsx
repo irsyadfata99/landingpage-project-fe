@@ -3,12 +3,13 @@ import { useSearchParams } from "react-router-dom";
 import {
   getPublicProducts,
   getPublicExpeditions,
+  getLandingPage,
   createOrder,
   chargePayment,
   validateVoucher,
 } from "@/services/api";
 import type { Product } from "@/types/product.types";
-import type { Expedition } from "@/types/content.types";
+import type { Expedition, ContactPerson } from "@/types/content.types";
 import type {
   CreateOrderBody,
   CreateOrderResponse,
@@ -17,9 +18,10 @@ import type {
 } from "@/types/order.types";
 import CheckoutForm from "@/components/checkout/CheckoutForm";
 import OrderSummary from "@/components/checkout/OrderSummary";
+import FloatingWhatsApp from "@/components/common/FloatingWhatsApp";
 
 // ==========================================
-// TYPES — identik dengan CheckoutForm & OrderSummary
+// TYPES
 // ==========================================
 export interface CartItem {
   product: Product;
@@ -52,6 +54,7 @@ export default function CheckoutPage() {
 
   const [products, setProducts] = useState<Product[]>([]);
   const [expeditions, setExpeditions] = useState<Expedition[]>([]);
+  const [contact, setContact] = useState<ContactPerson | null>(null);
   const [loading, setLoading] = useState(true);
   const [dataError, setDataError] = useState<string | null>(null);
 
@@ -72,7 +75,6 @@ export default function CheckoutPage() {
 
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
 
-  // voucher: pakai ValidateVoucherResponse langsung (bukan custom type)
   const [voucherCode, setVoucherCode] = useState("");
   const [voucher, setVoucher] = useState<ValidateVoucherResponse | null>(null);
   const [voucherLoading, setVoucherLoading] = useState(false);
@@ -99,12 +101,14 @@ export default function CheckoutPage() {
     const load = async () => {
       try {
         setLoading(true);
-        const [prods, exps] = await Promise.all([
+        const [prods, exps, landingData] = await Promise.all([
           getPublicProducts(),
           getPublicExpeditions(),
+          getLandingPage(),
         ]);
         setProducts(prods);
         setExpeditions(exps);
+        setContact(landingData.contact_person);
 
         if (preselectedProductId) {
           const found = prods.find((p) => p.id === preselectedProductId);
@@ -121,7 +125,7 @@ export default function CheckoutPage() {
     void load();
   }, [preselectedProductId]);
 
-  // ---- onChange sesuai CheckoutForm ----
+  // ---- onChange ----
   const handleFormChange = useCallback(
     (field: keyof FormData, value: string | boolean) => {
       setFormData((prev) => ({ ...prev, [field]: value }));
@@ -133,7 +137,7 @@ export default function CheckoutPage() {
     [],
   );
 
-  // ---- onQuantityChange sesuai CheckoutForm ----
+  // ---- onQuantityChange ----
   const handleQuantityChange = useCallback(
     (productId: string, qty: number) => {
       if (qty < 0) return;
@@ -193,7 +197,7 @@ export default function CheckoutPage() {
     setVoucherError(null);
   }, []);
 
-  // ---- Submit — signature (e: React.FormEvent) sesuai CheckoutForm ----
+  // ---- Submit ----
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitError(null);
@@ -265,6 +269,12 @@ export default function CheckoutPage() {
     }
   };
 
+  // Nama produk di cart untuk pre-filled WA message
+  const cartProductNames = cartItems.map((i) => i.product.name).join(", ");
+  const waMessage = cartProductNames
+    ? `Halo, saya ingin bertanya tentang pesanan saya untuk produk: ${cartProductNames}`
+    : undefined;
+
   // ---- Loading / Error ----
   if (loading) {
     return (
@@ -330,16 +340,24 @@ export default function CheckoutPage() {
 
   if (step === "payment" && paymentResult && orderResult) {
     return (
-      <PaymentView
-        order={orderResult}
-        payment={paymentResult}
-        onDone={() => setStep("success")}
-      />
+      <>
+        <PaymentView
+          order={orderResult}
+          payment={paymentResult}
+          onDone={() => setStep("success")}
+        />
+        <FloatingWhatsApp contact={contact} customMessage={waMessage} />
+      </>
     );
   }
 
   if (step === "success" && orderResult) {
-    return <SuccessView orderCode={orderResult.order_code} />;
+    return (
+      <>
+        <SuccessView orderCode={orderResult.order_code} />
+        <FloatingWhatsApp contact={contact} customMessage={waMessage} />
+      </>
+    );
   }
 
   return (
@@ -404,6 +422,8 @@ export default function CheckoutPage() {
           />
         </div>
       </div>
+
+      <FloatingWhatsApp contact={contact} customMessage={waMessage} />
 
       <style>{`
         @media (max-width: 900px) {

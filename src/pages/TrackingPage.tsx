@@ -4,9 +4,12 @@ import {
   trackOrder,
   confirmDelivery,
   checkPaymentStatus,
+  getLandingPage,
 } from "@/services/api";
 import type { Order, OrderStatus } from "@/types/order.types";
+import type { ContactPerson } from "@/types/content.types";
 import Modal from "@/components/common/Modal";
+import FloatingWhatsApp from "@/components/common/FloatingWhatsApp";
 
 // ==========================================
 // HELPERS
@@ -157,7 +160,6 @@ function StatusTimeline({ status }: { status: OrderStatus }) {
 
   return (
     <div style={{ position: "relative" }}>
-      {/* Connector line */}
       <div
         style={{
           position: "absolute",
@@ -169,7 +171,6 @@ function StatusTimeline({ status }: { status: OrderStatus }) {
           zIndex: 0,
         }}
       />
-      {/* Progress line */}
       <div
         style={{
           position: "absolute",
@@ -208,7 +209,6 @@ function StatusTimeline({ status }: { status: OrderStatus }) {
                 paddingBottom: idx < TIMELINE_STEPS.length - 1 ? 24 : 0,
               }}
             >
-              {/* Dot */}
               <div
                 style={{
                   width: 40,
@@ -246,7 +246,6 @@ function StatusTimeline({ status }: { status: OrderStatus }) {
                 )}
               </div>
 
-              {/* Label */}
               <div style={{ paddingTop: 8 }}>
                 <p
                   style={{
@@ -289,15 +288,27 @@ export default function TrackingPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Confirm delivery modal
+  const [contact, setContact] = useState<ContactPerson | null>(null);
+
   const [confirmModal, setConfirmModal] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [confirmError, setConfirmError] = useState<string | null>(null);
 
-  // Polling ref
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // ---- Fetch order via trackOrder (selalu dapat full data + items) ----
+  // Fetch contact person sekali saat mount
+  useEffect(() => {
+    const fetchContact = async () => {
+      try {
+        const data = await getLandingPage();
+        setContact(data.contact_person);
+      } catch {
+        // silent fail — WA button tidak tampil jika gagal
+      }
+    };
+    void fetchContact();
+  }, []);
+
   const fetchOrder = useCallback(async (code: string, silent = false) => {
     if (!code.trim()) return;
     if (!silent) {
@@ -306,7 +317,6 @@ export default function TrackingPage() {
       setOrder(null);
     }
     try {
-      // Selalu pakai trackOrder untuk mendapat full data termasuk items
       const fetched = await trackOrder(code);
       setOrder(fetched);
     } catch {
@@ -317,31 +327,24 @@ export default function TrackingPage() {
     }
   }, []);
 
-  // ---- Cek status pembayaran lalu fetch ulang jika berubah ----
-  // Hanya dipakai untuk polling PENDING agar sinkron dengan Tripay
   const checkAndRefresh = useCallback(
     async (code: string) => {
       try {
-        // checkPaymentStatus menerima order_code (backend: WHERE id::text = $1 OR order_code = $1)
         const statusData = await checkPaymentStatus(code);
-        // Jika status berubah dari PENDING ke sesuatu yang lain, fetch ulang penuh
         if (statusData.status !== "PENDING") {
           await fetchOrder(code, true);
         }
       } catch {
-        // Silent fail — tidak perlu tampilkan error saat polling
+        // silent
       }
     },
     [fetchOrder],
   );
 
-  // ---- Auto fetch saat ada initial code ----
   useEffect(() => {
     if (searchCode) void fetchOrder(searchCode);
   }, [searchCode, fetchOrder]);
 
-  // ---- Polling setiap 30 detik untuk PENDING ----
-  // Untuk PAID tidak perlu polling karena status berikutnya (PROCESSING) diupdate admin manual
   useEffect(() => {
     if (pollingRef.current) clearInterval(pollingRef.current);
 
@@ -356,7 +359,6 @@ export default function TrackingPage() {
     };
   }, [order?.status, order?.order_code, checkAndRefresh]);
 
-  // ---- Handle search ----
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     const code = inputCode.trim().toUpperCase();
@@ -365,7 +367,6 @@ export default function TrackingPage() {
     navigate(`/track/${code}`, { replace: true });
   };
 
-  // ---- Konfirmasi terima ----
   const handleConfirm = async () => {
     if (!order) return;
     setConfirming(true);
@@ -383,6 +384,11 @@ export default function TrackingPage() {
       setConfirming(false);
     }
   };
+
+  // Pre-filled WA message berdasarkan order yang sedang ditampilkan
+  const waMessage = order
+    ? `Halo, saya ingin bertanya mengenai pesanan saya dengan kode ${order.order_code}. Mohon bantuannya.`
+    : undefined;
 
   const cfg = order ? STATUS_CONFIG[order.status] : null;
 
@@ -613,7 +619,7 @@ export default function TrackingPage() {
                   <StatusTimeline status={order.status} />
                 </div>
 
-                {/* Shipping Info (jika ada) */}
+                {/* Shipping Info */}
                 {(order.expedition_name || order.tracking_number) && (
                   <div
                     style={{
@@ -812,7 +818,6 @@ export default function TrackingPage() {
                           </p>
                         </div>
 
-                        {/* Download link untuk produk digital */}
                         {item.signed_download_url && (
                           <a
                             href={item.signed_download_url}
@@ -1099,7 +1104,6 @@ export default function TrackingPage() {
               </div>
             </div>
 
-            {/* Polling indicator — hanya untuk PENDING */}
             {order.status === "PENDING" && (
               <p
                 style={{
@@ -1202,6 +1206,9 @@ export default function TrackingPage() {
           </div>
         </div>
       </Modal>
+
+      {/* Floating WhatsApp */}
+      <FloatingWhatsApp contact={contact} customMessage={waMessage} />
 
       <style>{`
         @media (max-width: 768px) {

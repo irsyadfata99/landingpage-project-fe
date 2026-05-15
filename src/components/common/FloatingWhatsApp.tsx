@@ -3,21 +3,30 @@ import type { ContactPerson } from "@/types/content.types";
 interface FloatingWhatsAppProps {
   contact: ContactPerson | null;
   productName?: string;
+  customMessage?: string;
 }
 
 export default function FloatingWhatsApp({
   contact,
   productName,
+  customMessage,
 }: FloatingWhatsAppProps) {
   if (!contact?.is_active || !contact.whatsapp_number) return null;
 
   const buildUrl = (): string => {
     const number = contact.whatsapp_number!;
-    if (!productName) return `https://wa.me/${number}`;
-    const text = encodeURIComponent(
-      `Halo, saya tertarik dengan produk "${productName}". Boleh info lebih lanjut?`,
-    );
-    return `https://wa.me/${number}?text=${text}`;
+
+    // Prioritas: customMessage → productName → pesan default
+    let text: string;
+    if (customMessage) {
+      text = customMessage;
+    } else if (productName) {
+      text = `Halo, saya tertarik dengan produk "${productName}". Boleh info lebih lanjut?`;
+    } else {
+      text = `Halo, saya ingin bertanya tentang produk Anda.`;
+    }
+
+    return `https://wa.me/${number}?text=${encodeURIComponent(text)}`;
   };
 
   const handleMouseOver = (e: React.MouseEvent<HTMLAnchorElement>) => {

@@ -24,7 +24,6 @@ export default function LandingPage() {
 
     document.title = meta_title;
 
-    // Meta description
     let metaDesc = document.querySelector<HTMLMetaElement>(
       'meta[name="description"]',
     );
@@ -35,7 +34,6 @@ export default function LandingPage() {
     }
     metaDesc.content = meta_description;
 
-    // Font
     if (font_url) {
       let link = document.querySelector<HTMLLinkElement>("link[data-font]");
       if (!link) {
@@ -47,11 +45,9 @@ export default function LandingPage() {
       link.href = font_url;
     }
 
-    // CSS vars override dari DB
     document.documentElement.style.setProperty("--primary", primary_color);
     document.documentElement.style.setProperty("--secondary", secondary_color);
 
-    // Favicon
     if (favicon_url) {
       let favicon = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
       if (!favicon) {
@@ -107,7 +103,12 @@ export default function LandingPage() {
     );
   }
 
-  const contact = data?.contact_person;
+  const contact = data?.contact_person ?? null;
+
+  // Ambil nama produk pertama yang aktif untuk pre-filled WA message
+  // Fallback ke brand_name jika tidak ada produk
+  const firstProductName =
+    data?.pricing?.[0]?.name ?? data?.site_config?.brand_name;
 
   return (
     <div
@@ -212,7 +213,9 @@ export default function LandingPage() {
                 <p style={{ fontWeight: 600, marginBottom: 4 }}>Hubungi Kami</p>
                 {contact.whatsapp_number && (
                   <a
-                    href={`https://wa.me/${contact.whatsapp_number}`}
+                    href={`https://wa.me/${contact.whatsapp_number}?text=${encodeURIComponent(
+                      `Halo, saya tertarik dengan produk "${firstProductName}". Boleh info lebih lanjut?`,
+                    )}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     style={{
@@ -269,10 +272,8 @@ export default function LandingPage() {
           </div>
         </div>
       </footer>
-      <FloatingWhatsApp
-        contact={contact ?? null}
-        productName={data?.site_config?.brand_name}
-      />
+
+      <FloatingWhatsApp contact={contact} productName={firstProductName} />
     </div>
   );
 }
