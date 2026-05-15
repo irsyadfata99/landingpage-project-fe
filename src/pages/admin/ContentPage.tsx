@@ -26,6 +26,8 @@ interface HeroSection {
   image_url: string | null;
   bg_color: string | null;
   is_active: boolean;
+  secondary_cta_text: string | null;
+  secondary_cta_target: string | null;
 }
 
 interface PromoSection {
@@ -553,6 +555,9 @@ function HeroForm({ data }: { data: HeroSection | null }) {
     cta_text: data?.cta_text ?? "",
     bg_color: data?.bg_color ?? "#FFFFFF",
     is_active: data?.is_active ?? true,
+    // NEW: secondary CTA
+    secondary_cta_text: data?.secondary_cta_text ?? "",
+    secondary_cta_target: data?.secondary_cta_target ?? "",
   });
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
@@ -569,6 +574,8 @@ function HeroForm({ data }: { data: HeroSection | null }) {
         cta_text: data.cta_text,
         bg_color: data.bg_color ?? "#FFFFFF",
         is_active: data.is_active,
+        secondary_cta_text: data.secondary_cta_text ?? "",
+        secondary_cta_target: data.secondary_cta_target ?? "",
       });
   }, [data]);
 
@@ -583,6 +590,9 @@ function HeroForm({ data }: { data: HeroSection | null }) {
       fd.append("cta_text", form.cta_text);
       fd.append("bg_color", form.bg_color);
       fd.append("is_active", String(form.is_active));
+      // NEW: kirim secondary CTA (kosong string = hapus)
+      fd.append("secondary_cta_text", form.secondary_cta_text);
+      fd.append("secondary_cta_target", form.secondary_cta_target);
       if (imageFile) fd.append("image", imageFile);
       await api.put("/admin/content/hero", fd, {
         headers: { "Content-Type": "multipart/form-data" },
@@ -632,10 +642,12 @@ function HeroForm({ data }: { data: HeroSection | null }) {
           onBlur={(e) => (e.currentTarget.style.borderColor = "#E5E7EB")}
         />
       </Field>
+
+      {/* Primary CTA + bg_color + Status */}
       <div
         style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14 }}
       >
-        <Field label="Teks CTA">
+        <Field label="Teks CTA Utama">
           <input
             style={inputStyle}
             value={form.cta_text}
@@ -693,6 +705,80 @@ function HeroForm({ data }: { data: HeroSection | null }) {
           </button>
         </Field>
       </div>
+
+      {/* ==========================================
+          NEW: Secondary CTA
+          ========================================== */}
+      <div
+        style={{
+          border: "1px solid #E5E7EB",
+          borderRadius: 10,
+          padding: "16px",
+          background: "#F9FAFB",
+          display: "flex",
+          flexDirection: "column",
+          gap: 12,
+        }}
+      >
+        <p
+          style={{ fontSize: 13, fontWeight: 700, color: "#374151", margin: 0 }}
+        >
+          🔘 CTA Sekunder (opsional)
+        </p>
+        <div
+          style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}
+        >
+          <Field
+            label="Teks CTA Sekunder"
+            hint="Kosongkan jika tidak ingin menampilkan tombol sekunder"
+          >
+            <input
+              style={inputStyle}
+              value={form.secondary_cta_text}
+              onChange={(e) =>
+                setForm((p) => ({ ...p, secondary_cta_text: e.target.value }))
+              }
+              placeholder="Lihat Produk"
+              onFocus={(e) => (e.currentTarget.style.borderColor = "#3B82F6")}
+              onBlur={(e) => (e.currentTarget.style.borderColor = "#E5E7EB")}
+            />
+          </Field>
+          <Field
+            label="Target / Anchor"
+            hint="Contoh: #pricing, #produk, /track, atau URL eksternal"
+          >
+            <input
+              style={inputStyle}
+              value={form.secondary_cta_target}
+              onChange={(e) =>
+                setForm((p) => ({ ...p, secondary_cta_target: e.target.value }))
+              }
+              placeholder="#pricing"
+              onFocus={(e) => (e.currentTarget.style.borderColor = "#3B82F6")}
+              onBlur={(e) => (e.currentTarget.style.borderColor = "#E5E7EB")}
+            />
+          </Field>
+        </div>
+        {form.secondary_cta_text && (
+          <div
+            style={{
+              background: "#EFF6FF",
+              border: "1px solid #BFDBFE",
+              borderRadius: 6,
+              padding: "8px 12px",
+              fontSize: 12,
+              color: "#1D4ED8",
+            }}
+          >
+            Preview: tombol &quot;<strong>{form.secondary_cta_text}</strong>
+            &quot;
+            {form.secondary_cta_target
+              ? ` → mengarah ke "${form.secondary_cta_target}"`
+              : " (target belum diisi)"}
+          </div>
+        )}
+      </div>
+
       <ImageUploader
         label="Gambar Hero (opsional)"
         currentUrl={data?.image_url}
