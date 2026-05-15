@@ -9,11 +9,34 @@ interface HeroSectionProps {
   siteConfig: SiteConfig | null;
 }
 
+const resolveTarget = (
+  target: string | null,
+): { href?: string; anchor?: string } => {
+  if (!target) return {};
+  if (target.startsWith("#")) return { anchor: target };
+  return { href: target };
+};
+
 export default function HeroSection({ hero, siteConfig }: HeroSectionProps) {
   const navigate = useNavigate();
   const primaryColor = siteConfig?.primary_color ?? "#3B82F6";
 
   if (!hero?.is_active) return null;
+
+  const secondaryTarget = resolveTarget(hero.secondary_cta_target ?? null);
+
+  const handleSecondaryClick = () => {
+    if (secondaryTarget.anchor) {
+      const el = document.querySelector(secondaryTarget.anchor);
+      el?.scrollIntoView({ behavior: "smooth" });
+    } else if (secondaryTarget.href) {
+      if (secondaryTarget.href.startsWith("/")) {
+        navigate(secondaryTarget.href);
+      } else {
+        window.open(secondaryTarget.href, "_blank", "noopener");
+      }
+    }
+  };
 
   return (
     <section
@@ -74,6 +97,7 @@ export default function HeroSection({ hero, siteConfig }: HeroSectionProps) {
                 justifyContent: hero.image_url ? "flex-start" : "center",
               }}
             >
+              {/* Primary CTA */}
               <button
                 onClick={() => navigate("/checkout")}
                 style={{
@@ -99,21 +123,37 @@ export default function HeroSection({ hero, siteConfig }: HeroSectionProps) {
               >
                 {hero.cta_text}
               </button>
-              <button
-                onClick={() => navigate("/track")}
-                style={{
-                  background: "transparent",
-                  color: primaryColor,
-                  border: `2px solid ${primaryColor}`,
-                  borderRadius: "var(--radius)",
-                  padding: "13px 28px",
-                  fontSize: 16,
-                  fontWeight: 600,
-                  cursor: "pointer",
-                }}
-              >
-                Lacak Pesanan
-              </button>
+
+              {/* Secondary CTA — hanya tampil jika ada secondary_cta_text */}
+              {hero.secondary_cta_text && (
+                <button
+                  onClick={handleSecondaryClick}
+                  style={{
+                    background: "transparent",
+                    color: primaryColor,
+                    border: `2px solid ${primaryColor}`,
+                    borderRadius: "var(--radius)",
+                    padding: "13px 28px",
+                    fontSize: 16,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    transition: "background 0.15s, color 0.15s",
+                  }}
+                  onMouseOver={(e) => {
+                    (e.currentTarget as HTMLButtonElement).style.background =
+                      primaryColor;
+                    (e.currentTarget as HTMLButtonElement).style.color = "#fff";
+                  }}
+                  onMouseOut={(e) => {
+                    (e.currentTarget as HTMLButtonElement).style.background =
+                      "transparent";
+                    (e.currentTarget as HTMLButtonElement).style.color =
+                      primaryColor;
+                  }}
+                >
+                  {hero.secondary_cta_text}
+                </button>
+              )}
             </div>
           </div>
 

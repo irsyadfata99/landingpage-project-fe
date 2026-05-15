@@ -5,6 +5,7 @@ import HeroSection from "@/components/landing/HeroSection";
 import PricingSection from "@/components/landing/PricingSection";
 import TestiSection from "@/components/landing/TestiSection";
 import FAQSection from "@/components/landing/FAQSection";
+import FloatingWhatsApp from "@/components/common/FloatingWhatsApp";
 
 export default function LandingPage() {
   const { data, loading, error } = useContent();
@@ -268,6 +269,10 @@ export default function LandingPage() {
           </div>
         </div>
       </footer>
+      <FloatingWhatsApp
+        contact={contact ?? null}
+        productName={data?.site_config?.brand_name}
+      />
     </div>
   );
 }
