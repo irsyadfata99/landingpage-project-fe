@@ -39,6 +39,20 @@ export const getLandingPage = async (): Promise<LandingPageData> => {
 };
 
 // ==========================================
+// STATS (public) — social proof
+// ==========================================
+export interface PublicStats {
+  total_buyers: number;
+  average_rating: number;
+  total_reviews: number;
+}
+
+export const getStats = async (): Promise<PublicStats> => {
+  const res = await api.get<ApiResponse<PublicStats>>("/stats");
+  return res.data.data!;
+};
+
+// ==========================================
 // PRODUCTS & EXPEDITIONS (public)
 // ==========================================
 export const getPublicProducts = async (): Promise<Product[]> => {

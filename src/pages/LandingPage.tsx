@@ -1,5 +1,7 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { Helmet } from "react-helmet-async";
 import { useContent } from "@/hooks/useContent";
+import { getStats, type PublicStats } from "@/services/api";
 import Navbar from "@/components/common/Navbar";
 import HeroSection from "@/components/landing/HeroSection";
 import PricingSection from "@/components/landing/PricingSection";
@@ -9,30 +11,22 @@ import FloatingWhatsApp from "@/components/common/FloatingWhatsApp";
 
 export default function LandingPage() {
   const { data, loading, error } = useContent();
+  const [stats, setStats] = useState<PublicStats | null>(null);
+
+  // Fetch stats secara terpisah — tidak blokir render halaman
+  useEffect(() => {
+    getStats()
+      .then(setStats)
+      .catch(() => {
+        // Silent fail — social proof badge tidak tampil jika gagal
+      });
+  }, []);
 
   // Apply dynamic meta & font dari site_config
   useEffect(() => {
     if (!data?.site_config) return;
-    const {
-      meta_title,
-      meta_description,
-      font_url,
-      primary_color,
-      secondary_color,
-      favicon_url,
-    } = data.site_config;
-
-    document.title = meta_title;
-
-    let metaDesc = document.querySelector<HTMLMetaElement>(
-      'meta[name="description"]',
-    );
-    if (!metaDesc) {
-      metaDesc = document.createElement("meta");
-      metaDesc.name = "description";
-      document.head.appendChild(metaDesc);
-    }
-    metaDesc.content = meta_description;
+    const { font_url, primary_color, secondary_color, favicon_url } =
+      data.site_config;
 
     if (font_url) {
       let link = document.querySelector<HTMLLinkElement>("link[data-font]");
@@ -103,30 +97,57 @@ export default function LandingPage() {
     );
   }
 
+  const siteConfig = data?.site_config ?? null;
   const contact = data?.contact_person ?? null;
+  const firstProductName = data?.pricing?.[0]?.name ?? siteConfig?.brand_name;
 
-  // Ambil nama produk pertama yang aktif untuk pre-filled WA message
-  // Fallback ke brand_name jika tidak ada produk
-  const firstProductName =
-    data?.pricing?.[0]?.name ?? data?.site_config?.brand_name;
+  // OG meta values
+  const ogTitle = siteConfig?.meta_title ?? siteConfig?.brand_name ?? "";
+  const ogDescription = siteConfig?.meta_description ?? "";
+  const ogImage = siteConfig?.og_image_url ?? "";
+  const siteUrl = window.location.origin;
 
   return (
     <div
       style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}
     >
-      <Navbar siteConfig={data?.site_config ?? null} />
+      {/* ==========================================
+          OPEN GRAPH & SEO META TAGS
+          react-helmet-async inject ke <head>
+      ========================================== */}
+      <Helmet>
+        <title>{ogTitle}</title>
+        <meta name="description" content={ogDescription} />
+
+        {/* Open Graph */}
+        <meta property="og:type" content="website" />
+        <meta property="og:url" content={siteUrl} />
+        <meta property="og:title" content={ogTitle} />
+        <meta property="og:description" content={ogDescription} />
+        {ogImage && <meta property="og:image" content={ogImage} />}
+
+        {/* Twitter Card */}
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:title" content={ogTitle} />
+        <meta name="twitter:description" content={ogDescription} />
+        {ogImage && <meta name="twitter:image" content={ogImage} />}
+      </Helmet>
+
+      <Navbar siteConfig={siteConfig} />
 
       <main style={{ flex: 1 }}>
+        {/* Hero — terima stats sebagai prop */}
         <HeroSection
           hero={data?.hero ?? null}
-          siteConfig={data?.site_config ?? null}
+          siteConfig={siteConfig}
+          stats={stats}
         />
 
         {/* Promo Banner */}
         {data?.promo?.is_active && (
           <section
             style={{
-              background: data.site_config?.primary_color ?? "#3B82F6",
+              background: siteConfig?.primary_color ?? "#3B82F6",
               padding: "20px 0",
             }}
           >
@@ -145,7 +166,7 @@ export default function LandingPage() {
                 <span
                   style={{
                     background: "#fff",
-                    color: data.site_config?.primary_color ?? "#3B82F6",
+                    color: siteConfig?.primary_color ?? "#3B82F6",
                     fontSize: 12,
                     fontWeight: 700,
                     padding: "3px 12px",
@@ -167,15 +188,12 @@ export default function LandingPage() {
           </section>
         )}
 
-        <PricingSection
-          pricing={data?.pricing ?? []}
-          siteConfig={data?.site_config ?? null}
-        />
+        <PricingSection pricing={data?.pricing ?? []} siteConfig={siteConfig} />
         <TestiSection testimonials={data?.testimonials ?? []} />
         <FAQSection faqs={data?.faqs ?? []} />
       </main>
 
-      {/* Footer / Contact */}
+      {/* Footer */}
       <footer
         style={{ background: "#111827", color: "#fff", padding: "48px 0 32px" }}
       >
@@ -192,7 +210,7 @@ export default function LandingPage() {
           >
             <div>
               <h3 style={{ fontSize: 20, fontWeight: 700, marginBottom: 8 }}>
-                {data?.site_config?.brand_name ?? "Toko"}
+                {siteConfig?.brand_name ?? "Toko"}
               </h3>
               <p
                 style={{
@@ -202,7 +220,7 @@ export default function LandingPage() {
                   lineHeight: 1.7,
                 }}
               >
-                {data?.site_config?.meta_description}
+                {siteConfig?.meta_description}
               </p>
             </div>
 
@@ -266,8 +284,8 @@ export default function LandingPage() {
             }}
           >
             <p style={{ color: "#6B7280", fontSize: 13 }}>
-              © {new Date().getFullYear()}{" "}
-              {data?.site_config?.brand_name ?? "Toko"}. All rights reserved.
+              © {new Date().getFullYear()} {siteConfig?.brand_name ?? "Toko"}.
+              All rights reserved.
             </p>
           </div>
         </div>

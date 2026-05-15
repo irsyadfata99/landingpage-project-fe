@@ -3,10 +3,12 @@ import type {
   HeroSection as HeroSectionType,
   SiteConfig,
 } from "@/types/content.types";
+import type { PublicStats } from "@/services/api";
 
 interface HeroSectionProps {
   hero: HeroSectionType | null;
   siteConfig: SiteConfig | null;
+  stats?: PublicStats | null;
 }
 
 const resolveTarget = (
@@ -17,7 +19,110 @@ const resolveTarget = (
   return { href: target };
 };
 
-export default function HeroSection({ hero, siteConfig }: HeroSectionProps) {
+// ==========================================
+// HELPER: format angka ke "1.2rb", "10rb", dst
+// ==========================================
+const formatCount = (n: number): string => {
+  if (n >= 1000) return `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}rb+`;
+  return `${n}+`;
+};
+
+// ==========================================
+// SOCIAL PROOF BADGE
+// Tampil hanya jika ada data (total_buyers > 0 atau ada review)
+// ==========================================
+function SocialProofBadge({ stats }: { stats: PublicStats }) {
+  const showBuyers = stats.total_buyers > 0;
+  const showRating = stats.total_reviews > 0 && stats.average_rating > 0;
+
+  if (!showBuyers && !showRating) return null;
+
+  return (
+    <div
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 12,
+        background: "rgba(255,255,255,0.92)",
+        border: "1px solid rgba(0,0,0,0.08)",
+        borderRadius: "var(--radius-full)",
+        padding: "8px 16px",
+        boxShadow: "0 2px 12px rgba(0,0,0,0.08)",
+        flexWrap: "wrap",
+      }}
+    >
+      {/* Buyers */}
+      {showBuyers && (
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          {/* Avatar stack dummy — 3 lingkaran warna */}
+          <div style={{ display: "flex", marginRight: 2 }}>
+            {["#F87171", "#60A5FA", "#34D399"].map((color, i) => (
+              <div
+                key={i}
+                style={{
+                  width: 22,
+                  height: 22,
+                  borderRadius: "50%",
+                  background: color,
+                  border: "2px solid #fff",
+                  marginLeft: i === 0 ? 0 : -6,
+                  zIndex: 3 - i,
+                  position: "relative",
+                }}
+              />
+            ))}
+          </div>
+          <span
+            style={{
+              fontSize: 13,
+              fontWeight: 700,
+              color: "#111827",
+            }}
+          >
+            {formatCount(stats.total_buyers)}
+          </span>
+          <span style={{ fontSize: 13, color: "#6B7280" }}>pembeli</span>
+        </div>
+      )}
+
+      {/* Divider */}
+      {showBuyers && showRating && (
+        <div
+          style={{
+            width: 1,
+            height: 16,
+            background: "#E5E7EB",
+          }}
+        />
+      )}
+
+      {/* Rating */}
+      {showRating && (
+        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          <span style={{ color: "#F59E0B", fontSize: 14 }}>★</span>
+          <span
+            style={{
+              fontSize: 13,
+              fontWeight: 700,
+              color: "#111827",
+            }}
+          >
+            {stats.average_rating.toFixed(1)}
+          </span>
+          <span style={{ fontSize: 13, color: "#6B7280" }}>
+            ({stats.total_reviews} ulasan)
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function HeroSection({
+  hero,
+  siteConfig,
+  stats,
+}: HeroSectionProps) {
   const navigate = useNavigate();
   const primaryColor = siteConfig?.primary_color ?? "#3B82F6";
 
@@ -63,6 +168,19 @@ export default function HeroSection({ hero, siteConfig }: HeroSectionProps) {
               margin: hero.image_url ? "0" : "0 auto",
             }}
           >
+            {/* Social proof badge — tampil di atas headline */}
+            {stats && (
+              <div
+                style={{
+                  marginBottom: 20,
+                  display: "flex",
+                  justifyContent: hero.image_url ? "flex-start" : "center",
+                }}
+              >
+                <SocialProofBadge stats={stats} />
+              </div>
+            )}
+
             <h1
               style={{
                 fontSize: "clamp(32px, 5vw, 56px)",
@@ -124,7 +242,7 @@ export default function HeroSection({ hero, siteConfig }: HeroSectionProps) {
                 {hero.cta_text}
               </button>
 
-              {/* Secondary CTA — hanya tampil jika ada secondary_cta_text */}
+              {/* Secondary CTA */}
               {hero.secondary_cta_text && (
                 <button
                   onClick={handleSecondaryClick}
