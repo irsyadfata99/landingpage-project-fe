@@ -25,8 +25,14 @@ export default function LandingPage() {
   // Apply dynamic meta & font dari site_config
   useEffect(() => {
     if (!data?.site_config) return;
-    const { font_url, primary_color, secondary_color, favicon_url } =
-      data.site_config;
+    const {
+      font_url,
+      primary_color,
+      secondary_color,
+      favicon_url,
+      meta_pixel_id,
+      ga4_measurement_id,
+    } = data.site_config;
 
     if (font_url) {
       let link = document.querySelector<HTMLLinkElement>("link[data-font]");
@@ -50,6 +56,51 @@ export default function LandingPage() {
         document.head.appendChild(favicon);
       }
       favicon.href = favicon_url;
+    }
+
+    if (meta_pixel_id) {
+      const existingPixel = document.getElementById("meta-pixel-script");
+      if (!existingPixel) {
+        const script = document.createElement("script");
+        script.id = "meta-pixel-script";
+        script.innerHTML = `
+        !function(f,b,e,v,n,t,s)
+        {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+        n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+        if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
+        n.queue=[];t=b.createElement(e);t.async=!0;
+        t.src=v;s=b.getElementsByTagName(e)[0];
+        s.parentNode.insertBefore(t,s)}(window, document,'script',
+        'https://connect.facebook.net/en_US/fbevents.js');
+        fbq('init', '${meta_pixel_id}');
+        fbq('track', 'PageView');
+      `;
+        document.head.appendChild(script);
+      }
+    }
+
+    // ==========================================
+    // NEW: GOOGLE ANALYTICS 4
+    // ==========================================
+    if (ga4_measurement_id) {
+      const existingGtag = document.getElementById("ga4-script");
+      if (!existingGtag) {
+        const script = document.createElement("script");
+        script.id = "ga4-script";
+        script.async = true;
+        script.src = `https://www.googletagmanager.com/gtag/js?id=${ga4_measurement_id}`;
+        document.head.appendChild(script);
+
+        const inlineScript = document.createElement("script");
+        inlineScript.id = "ga4-inline";
+        inlineScript.innerHTML = `
+        window.dataLayer = window.dataLayer || [];
+        function gtag(){dataLayer.push(arguments);}
+        gtag('js', new Date());
+        gtag('config', '${ga4_measurement_id}');
+      `;
+        document.head.appendChild(inlineScript);
+      }
     }
   }, [data?.site_config]);
 

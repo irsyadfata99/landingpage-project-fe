@@ -14,6 +14,8 @@ export interface SiteConfig {
   meta_title: string;
   meta_description: string;
   og_image_url: string | null;
+  meta_pixel_id: string | null; // NEW
+  ga4_measurement_id: string | null; // NEW
   updated_at: string;
 }
 

@@ -16,6 +16,8 @@ interface SiteConfig {
   meta_title: string;
   meta_description: string;
   og_image_url: string | null;
+  meta_pixel_id: string | null; // NEW
+  ga4_measurement_id: string | null; // NEW
 }
 
 interface HeroSection {
@@ -338,6 +340,8 @@ function SiteConfigForm({ data }: { data: SiteConfig | null }) {
     font_url: data?.font_url ?? "",
     meta_title: data?.meta_title ?? "",
     meta_description: data?.meta_description ?? "",
+    meta_pixel_id: data?.meta_pixel_id ?? "", // NEW
+    ga4_measurement_id: data?.ga4_measurement_id ?? "", // NEW
   });
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [faviconFile, setFaviconFile] = useState<File | null>(null);
@@ -358,6 +362,8 @@ function SiteConfigForm({ data }: { data: SiteConfig | null }) {
         font_url: data.font_url,
         meta_title: data.meta_title,
         meta_description: data.meta_description,
+        meta_pixel_id: data.meta_pixel_id ?? "", // NEW
+        ga4_measurement_id: data.ga4_measurement_id ?? "", // NEW
       });
     }
   }, [data]);
@@ -518,6 +524,87 @@ function SiteConfigForm({ data }: { data: SiteConfig | null }) {
         </div>
       </div>
 
+      {/* ==========================================
+          NEW: Tracking / Analytics
+          ========================================== */}
+      <div
+        style={{
+          border: "1px solid #E5E7EB",
+          borderRadius: 10,
+          padding: "16px",
+          background: "#F9FAFB",
+          display: "flex",
+          flexDirection: "column",
+          gap: 12,
+        }}
+      >
+        <p
+          style={{ fontSize: 13, fontWeight: 700, color: "#374151", margin: 0 }}
+        >
+          📊 Tracking & Analytics
+        </p>
+        <div
+          style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}
+        >
+          <Field
+            label="Meta Pixel ID"
+            hint="Dari Facebook Business Manager. Contoh: 1234567890123456"
+          >
+            <input
+              style={inputStyle}
+              value={form.meta_pixel_id}
+              onChange={(e) =>
+                setForm((p) => ({ ...p, meta_pixel_id: e.target.value }))
+              }
+              placeholder="1234567890123456"
+              onFocus={(e) => (e.currentTarget.style.borderColor = "#3B82F6")}
+              onBlur={(e) => (e.currentTarget.style.borderColor = "#E5E7EB")}
+            />
+          </Field>
+          <Field
+            label="GA4 Measurement ID"
+            hint="Dari Google Analytics 4. Contoh: G-XXXXXXXXXX"
+          >
+            <input
+              style={inputStyle}
+              value={form.ga4_measurement_id}
+              onChange={(e) =>
+                setForm((p) => ({ ...p, ga4_measurement_id: e.target.value }))
+              }
+              placeholder="G-XXXXXXXXXX"
+              onFocus={(e) => (e.currentTarget.style.borderColor = "#3B82F6")}
+              onBlur={(e) => (e.currentTarget.style.borderColor = "#E5E7EB")}
+            />
+          </Field>
+        </div>
+        {(form.meta_pixel_id || form.ga4_measurement_id) && (
+          <div
+            style={{
+              background: "#EFF6FF",
+              border: "1px solid #BFDBFE",
+              borderRadius: 6,
+              padding: "8px 12px",
+              fontSize: 12,
+              color: "#1D4ED8",
+              display: "flex",
+              gap: 16,
+              flexWrap: "wrap",
+            }}
+          >
+            {form.meta_pixel_id && (
+              <span>
+                ✅ Meta Pixel: <strong>{form.meta_pixel_id}</strong>
+              </span>
+            )}
+            {form.ga4_measurement_id && (
+              <span>
+                ✅ GA4: <strong>{form.ga4_measurement_id}</strong>
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+
       <div
         style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14 }}
       >
@@ -555,7 +642,6 @@ function HeroForm({ data }: { data: HeroSection | null }) {
     cta_text: data?.cta_text ?? "",
     bg_color: data?.bg_color ?? "#FFFFFF",
     is_active: data?.is_active ?? true,
-    // NEW: secondary CTA
     secondary_cta_text: data?.secondary_cta_text ?? "",
     secondary_cta_target: data?.secondary_cta_target ?? "",
   });
@@ -590,7 +676,6 @@ function HeroForm({ data }: { data: HeroSection | null }) {
       fd.append("cta_text", form.cta_text);
       fd.append("bg_color", form.bg_color);
       fd.append("is_active", String(form.is_active));
-      // NEW: kirim secondary CTA (kosong string = hapus)
       fd.append("secondary_cta_text", form.secondary_cta_text);
       fd.append("secondary_cta_target", form.secondary_cta_target);
       if (imageFile) fd.append("image", imageFile);
@@ -643,7 +728,6 @@ function HeroForm({ data }: { data: HeroSection | null }) {
         />
       </Field>
 
-      {/* Primary CTA + bg_color + Status */}
       <div
         style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14 }}
       >
@@ -706,9 +790,6 @@ function HeroForm({ data }: { data: HeroSection | null }) {
         </Field>
       </div>
 
-      {/* ==========================================
-          NEW: Secondary CTA
-          ========================================== */}
       <div
         style={{
           border: "1px solid #E5E7EB",

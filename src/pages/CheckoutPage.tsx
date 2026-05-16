@@ -110,6 +110,22 @@ export default function CheckoutPage() {
         setExpeditions(exps);
         setContact(landingData.contact_person);
 
+        // Simpan UTM dari URL ke sessionStorage
+        const urlParams = new URLSearchParams(window.location.search);
+        const utmFields = [
+          "utm_source",
+          "utm_medium",
+          "utm_campaign",
+          "referrer",
+        ];
+        utmFields.forEach((key) => {
+          const val =
+            key === "referrer"
+              ? document.referrer || urlParams.get(key) || ""
+              : urlParams.get(key) || "";
+          if (val) sessionStorage.setItem(key, val);
+        });
+
         if (preselectedProductId) {
           const found = prods.find((p) => p.id === preselectedProductId);
           if (found) setCartItems([{ product: found, quantity: 1 }]);
@@ -246,6 +262,19 @@ export default function CheckoutPage() {
         }),
         ...(formData.notes.trim() && { notes: formData.notes.trim() }),
         ...(voucher && { voucher_code: voucher.code }),
+        // UTM dari sessionStorage
+        ...(sessionStorage.getItem("utm_source") && {
+          utm_source: sessionStorage.getItem("utm_source")!,
+        }),
+        ...(sessionStorage.getItem("utm_medium") && {
+          utm_medium: sessionStorage.getItem("utm_medium")!,
+        }),
+        ...(sessionStorage.getItem("utm_campaign") && {
+          utm_campaign: sessionStorage.getItem("utm_campaign")!,
+        }),
+        ...(sessionStorage.getItem("referrer") && {
+          referrer: sessionStorage.getItem("referrer")!,
+        }),
       };
 
       const order = await createOrder(orderBody);
@@ -253,6 +282,36 @@ export default function CheckoutPage() {
 
       const payment = await chargePayment(order.order_id);
       setPaymentResult(payment);
+
+      // Meta Pixel Purchase event
+      if (typeof window !== "undefined" && (window as any).fbq) {
+        (window as any).fbq("track", "Purchase", {
+          value: order.total_amount,
+          currency: "IDR",
+          content_ids: cartItems.map((i) => i.product.id),
+          content_type: "product",
+        });
+      }
+
+      // GA4 purchase event
+      if (typeof window !== "undefined" && (window as any).gtag) {
+        (window as any).gtag("event", "purchase", {
+          transaction_id: order.order_code,
+          value: order.total_amount,
+          currency: "IDR",
+          items: cartItems.map((item) => ({
+            item_id: item.product.id,
+            item_name: item.product.name,
+            quantity: item.quantity,
+            price: item.product.price,
+          })),
+        });
+      }
+
+      // Bersihkan UTM dari sessionStorage setelah order sukses
+      ["utm_source", "utm_medium", "utm_campaign", "referrer"].forEach((key) =>
+        sessionStorage.removeItem(key),
+      );
 
       setStep("payment");
       window.scrollTo({ top: 0, behavior: "smooth" });
