@@ -7,6 +7,9 @@ import HeroSection from "@/components/landing/HeroSection";
 import PricingSection from "@/components/landing/PricingSection";
 import TestiSection from "@/components/landing/TestiSection";
 import FAQSection from "@/components/landing/FAQSection";
+import TrustBadges from "@/components/landing/TrustBadges";
+import ClosingCTA from "@/components/landing/ClosingCTA";
+import CountdownTimer from "@/components/landing/CountdownTimer";
 import FloatingWhatsApp from "@/components/common/FloatingWhatsApp";
 
 export default function LandingPage() {
@@ -79,9 +82,6 @@ export default function LandingPage() {
       }
     }
 
-    // ==========================================
-    // NEW: GOOGLE ANALYTICS 4
-    // ==========================================
     if (ga4_measurement_id) {
       const existingGtag = document.getElementById("ga4-script");
       if (!existingGtag) {
@@ -150,6 +150,8 @@ export default function LandingPage() {
 
   const siteConfig = data?.site_config ?? null;
   const contact = data?.contact_person ?? null;
+  const promo = data?.promo ?? null;
+  const trustBadges = data?.trust_badges ?? [];
   const firstProductName = data?.pricing?.[0]?.name ?? siteConfig?.brand_name;
 
   // OG meta values
@@ -158,26 +160,24 @@ export default function LandingPage() {
   const ogImage = siteConfig?.og_image_url ?? "";
   const siteUrl = window.location.origin;
 
+  // Promo countdown — tampilkan jika aktif dan ada end_date yang belum lewat
+  const showPromoCountdown =
+    promo?.is_active &&
+    promo.end_date &&
+    new Date(promo.end_date).getTime() > Date.now();
+
   return (
     <div
       style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}
     >
-      {/* ==========================================
-          OPEN GRAPH & SEO META TAGS
-          react-helmet-async inject ke <head>
-      ========================================== */}
       <Helmet>
         <title>{ogTitle}</title>
         <meta name="description" content={ogDescription} />
-
-        {/* Open Graph */}
         <meta property="og:type" content="website" />
         <meta property="og:url" content={siteUrl} />
         <meta property="og:title" content={ogTitle} />
         <meta property="og:description" content={ogDescription} />
         {ogImage && <meta property="og:image" content={ogImage} />}
-
-        {/* Twitter Card */}
         <meta name="twitter:card" content="summary_large_image" />
         <meta name="twitter:title" content={ogTitle} />
         <meta name="twitter:description" content={ogDescription} />
@@ -187,15 +187,18 @@ export default function LandingPage() {
       <Navbar siteConfig={siteConfig} />
 
       <main style={{ flex: 1 }}>
-        {/* Hero — terima stats sebagai prop */}
+        {/* Hero */}
         <HeroSection
           hero={data?.hero ?? null}
           siteConfig={siteConfig}
           stats={stats}
         />
 
+        {/* Trust Badges — tepat di bawah hero */}
+        {trustBadges.length > 0 && <TrustBadges badges={trustBadges} />}
+
         {/* Promo Banner */}
-        {data?.promo?.is_active && (
+        {promo?.is_active && (
           <section
             style={{
               background: siteConfig?.primary_color ?? "#3B82F6",
@@ -213,7 +216,7 @@ export default function LandingPage() {
                 textAlign: "center",
               }}
             >
-              {data.promo.badge_text && (
+              {promo.badge_text && (
                 <span
                   style={{
                     background: "#fff",
@@ -224,16 +227,23 @@ export default function LandingPage() {
                     borderRadius: "var(--radius-full)",
                   }}
                 >
-                  {data.promo.badge_text}
+                  {promo.badge_text}
                 </span>
               )}
               <p style={{ color: "#fff", fontWeight: 600, fontSize: 16 }}>
-                {data.promo.title}
+                {promo.title}
               </p>
-              {data.promo.description && (
+              {promo.description && (
                 <p style={{ color: "rgba(255,255,255,0.85)", fontSize: 14 }}>
-                  {data.promo.description}
+                  {promo.description}
                 </p>
+              )}
+              {/* Countdown timer inline di promo banner */}
+              {showPromoCountdown && promo.end_date && (
+                <CountdownTimer
+                  endDate={promo.end_date}
+                  primaryColor={siteConfig?.primary_color ?? "#3B82F6"}
+                />
               )}
             </div>
           </section>
@@ -242,6 +252,9 @@ export default function LandingPage() {
         <PricingSection pricing={data?.pricing ?? []} siteConfig={siteConfig} />
         <TestiSection testimonials={data?.testimonials ?? []} />
         <FAQSection faqs={data?.faqs ?? []} />
+
+        {/* Closing CTA — antara FAQ dan footer */}
+        <ClosingCTA siteConfig={siteConfig} promo={promo} />
       </main>
 
       {/* Footer */}

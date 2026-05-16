@@ -14,8 +14,12 @@ export interface SiteConfig {
   meta_title: string;
   meta_description: string;
   og_image_url: string | null;
-  meta_pixel_id: string | null; // NEW
-  ga4_measurement_id: string | null; // NEW
+  meta_pixel_id: string | null;
+  ga4_measurement_id: string | null;
+  // Closing CTA
+  closing_cta_headline: string | null;
+  closing_cta_subtext: string | null;
+  closing_cta_text: string | null;
   updated_at: string;
 }
 
@@ -27,6 +31,8 @@ export interface HeroSection {
   image_url: string | null;
   bg_color: string | null;
   is_active: boolean;
+  secondary_cta_text: string | null;
+  secondary_cta_target: string | null;
   updated_at: string;
 }
 
@@ -96,6 +102,14 @@ export interface Expedition {
   description: string | null;
 }
 
+export interface TrustBadge {
+  id: string;
+  label: string;
+  image_url: string | null;
+  sort_order: number;
+  is_active: boolean;
+}
+
 export interface LandingPageData {
   site_config: SiteConfig | null;
   hero: HeroSection | null;
@@ -104,18 +118,5 @@ export interface LandingPageData {
   testimonials: Testimonial[];
   faqs: FAQ[];
   contact_person: ContactPerson | null;
-}
-
-export interface HeroSection {
-  id: string;
-  headline: string;
-  subheadline: string | null;
-  cta_text: string;
-  image_url: string | null;
-  bg_color: string | null;
-  is_active: boolean;
-  // NEW
-  secondary_cta_text: string | null;
-  secondary_cta_target: string | null;
-  updated_at: string;
+  trust_badges: TrustBadge[];
 }
