@@ -86,6 +86,14 @@ interface ContactPerson {
   is_active: boolean;
 }
 
+interface PainPoint {
+  id: string;
+  headline: string;
+  items: string[];
+  is_active: boolean;
+  sort_order: number;
+}
+
 // ==========================================
 // SHARED STYLES
 // ==========================================
@@ -2112,6 +2120,386 @@ function FAQForm({
   );
 }
 
+function PainPointManager() {
+  const [items, setItems] = useState<PainPoint[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [showAdd, setShowAdd] = useState(false);
+  const [alert, setAlert] = useState<{
+    type: "success" | "error";
+    msg: string;
+  } | null>(null);
+
+  const fetch = useCallback(async () => {
+    try {
+      const res = await api.get<{ data: PainPoint[] }>("/admin/pain-points");
+      setItems(res.data.data);
+    } catch {
+      /* noop */
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void fetch();
+  }, [fetch]);
+
+  const handleDelete = async (id: string) => {
+    if (!confirm("Hapus pain point ini?")) return;
+    try {
+      await api.delete(`/admin/pain-points/${id}`);
+      setAlert({ type: "success", msg: "Pain point dihapus" });
+      void fetch();
+    } catch {
+      setAlert({ type: "error", msg: "Gagal menghapus" });
+    }
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      {alert && (
+        <Alert
+          type={alert.type}
+          message={alert.msg}
+          onClose={() => setAlert(null)}
+        />
+      )}
+
+      <div
+        style={{
+          background: "#EFF6FF",
+          border: "1px solid #BFDBFE",
+          borderRadius: 8,
+          padding: "10px 14px",
+          fontSize: 13,
+          color: "#1D4ED8",
+        }}
+      >
+        💡 Tampilkan 2 pain point untuk layout dua kolom (Masalah vs Solusi).
+        Item pertama = masalah (merah), item kedua = solusi (hijau).
+      </div>
+
+      {loading ? (
+        <p style={{ color: "#9CA3AF", fontSize: 14 }}>Memuat...</p>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {items.map((item) => (
+            <div key={item.id}>
+              {editingId === item.id ? (
+                <PainPointForm
+                  data={item}
+                  onSuccess={() => {
+                    setEditingId(null);
+                    setAlert({ type: "success", msg: "Pain point diperbarui" });
+                    void fetch();
+                  }}
+                  onCancel={() => setEditingId(null)}
+                />
+              ) : (
+                <div
+                  style={{
+                    background: "#F9FAFB",
+                    border: "1px solid #E5E7EB",
+                    borderRadius: 10,
+                    padding: "14px 16px",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "flex-start",
+                    gap: 12,
+                  }}
+                >
+                  <div style={{ flex: 1 }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        flexWrap: "wrap",
+                        marginBottom: 4,
+                      }}
+                    >
+                      <p style={{ fontWeight: 700, fontSize: 14 }}>
+                        {item.headline}
+                      </p>
+                      <span
+                        style={{
+                          fontSize: 11,
+                          background: item.is_active ? "#D1FAE5" : "#F3F4F6",
+                          color: item.is_active ? "#065F46" : "#6B7280",
+                          padding: "1px 8px",
+                          borderRadius: 99,
+                          fontWeight: 700,
+                        }}
+                      >
+                        {item.is_active ? "Aktif" : "Nonaktif"}
+                      </span>
+                    </div>
+                    <p style={{ fontSize: 12, color: "#6B7280" }}>
+                      {item.items.length} item · sort: {item.sort_order}
+                    </p>
+                    <ul
+                      style={{
+                        marginTop: 6,
+                        paddingLeft: 0,
+                        listStyle: "none",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 2,
+                      }}
+                    >
+                      {item.items.slice(0, 2).map((text, i) => (
+                        <li
+                          key={i}
+                          style={{
+                            fontSize: 12,
+                            color: "#9CA3AF",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                            maxWidth: 380,
+                          }}
+                        >
+                          • {text}
+                        </li>
+                      ))}
+                      {item.items.length > 2 && (
+                        <li style={{ fontSize: 12, color: "#9CA3AF" }}>
+                          +{item.items.length - 2} lainnya...
+                        </li>
+                      )}
+                    </ul>
+                  </div>
+                  <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                    <button
+                      onClick={() => setEditingId(item.id)}
+                      style={{
+                        padding: "5px 12px",
+                        background: "#EFF6FF",
+                        color: "#3B82F6",
+                        border: "1px solid #BFDBFE",
+                        borderRadius: 6,
+                        fontSize: 12,
+                        fontWeight: 600,
+                        cursor: "pointer",
+                      }}
+                    >
+                      ✏️ Edit
+                    </button>
+                    <button
+                      onClick={() => void handleDelete(item.id)}
+                      style={{
+                        padding: "5px 12px",
+                        background: "#FEF2F2",
+                        color: "#EF4444",
+                        border: "1px solid #FCA5A5",
+                        borderRadius: 6,
+                        fontSize: 12,
+                        fontWeight: 600,
+                        cursor: "pointer",
+                      }}
+                    >
+                      🗑️
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+
+          {showAdd ? (
+            <PainPointForm
+              data={null}
+              onSuccess={() => {
+                setShowAdd(false);
+                setAlert({ type: "success", msg: "Pain point ditambahkan" });
+                void fetch();
+              }}
+              onCancel={() => setShowAdd(false)}
+            />
+          ) : (
+            <button
+              onClick={() => setShowAdd(true)}
+              style={{
+                padding: "10px",
+                border: "2px dashed #E5E7EB",
+                borderRadius: 10,
+                background: "transparent",
+                color: "#6B7280",
+                fontSize: 14,
+                cursor: "pointer",
+                fontWeight: 600,
+              }}
+            >
+              ➕ Tambah Pain Point
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PainPointForm({
+  data,
+  onSuccess,
+  onCancel,
+}: {
+  data: PainPoint | null;
+  onSuccess: () => void;
+  onCancel: () => void;
+}) {
+  const [form, setForm] = useState({
+    headline: data?.headline ?? "",
+    items: data?.items.join("\n") ?? "",
+    is_active: data?.is_active ?? true,
+    sort_order: data ? String(data.sort_order) : "0",
+  });
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    try {
+      const body = {
+        headline: form.headline,
+        items: form.items
+          .split("\n")
+          .map((i) => i.trim())
+          .filter(Boolean),
+        is_active: form.is_active,
+        sort_order: Number(form.sort_order),
+      };
+
+      if (body.items.length === 0) {
+        setError("Minimal 1 item wajib diisi");
+        setLoading(false);
+        return;
+      }
+
+      if (data) {
+        await api.put(`/admin/pain-points/${data.id}`, body);
+      } else {
+        await api.post("/admin/pain-points", body);
+      }
+      onSuccess();
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { message?: string } } };
+      setError(e.response?.data?.message ?? "Gagal menyimpan");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div
+      style={{
+        background: "#F0F9FF",
+        border: "1px solid #BAE6FD",
+        borderRadius: 10,
+        padding: 16,
+      }}
+    >
+      <form
+        onSubmit={(e) => void handleSubmit(e)}
+        style={{ display: "flex", flexDirection: "column", gap: 12 }}
+      >
+        <div
+          style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}
+        >
+          <Field label="Headline" required>
+            <input
+              style={inputStyle}
+              value={form.headline}
+              onChange={(e) =>
+                setForm((p) => ({ ...p, headline: e.target.value }))
+              }
+              placeholder="Masalah yang Sering Dihadapi"
+              required
+              onFocus={(e) => (e.currentTarget.style.borderColor = "#3B82F6")}
+              onBlur={(e) => (e.currentTarget.style.borderColor = "#E5E7EB")}
+            />
+          </Field>
+          <Field label="Sort Order">
+            <input
+              type="number"
+              min={0}
+              style={inputStyle}
+              value={form.sort_order}
+              onChange={(e) =>
+                setForm((p) => ({ ...p, sort_order: e.target.value }))
+              }
+              onFocus={(e) => (e.currentTarget.style.borderColor = "#3B82F6")}
+              onBlur={(e) => (e.currentTarget.style.borderColor = "#E5E7EB")}
+            />
+          </Field>
+        </div>
+
+        <Field
+          label="Items (satu per baris)"
+          required
+          hint="Pisahkan setiap item dengan Enter"
+        >
+          <textarea
+            style={{ ...inputStyle, minHeight: 100, resize: "vertical" }}
+            value={form.items}
+            onChange={(e) => setForm((p) => ({ ...p, items: e.target.value }))}
+            placeholder={
+              "Bingung mencari produk yang tepat?\nKhawatir kualitas tidak sesuai?"
+            }
+            required
+            onFocus={(e) => (e.currentTarget.style.borderColor = "#3B82F6")}
+            onBlur={(e) => (e.currentTarget.style.borderColor = "#E5E7EB")}
+          />
+        </Field>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <button
+            type="button"
+            onClick={() => setForm((p) => ({ ...p, is_active: !p.is_active }))}
+            style={{
+              padding: "6px 14px",
+              border: `2px solid ${form.is_active ? "#10B981" : "#E5E7EB"}`,
+              borderRadius: 8,
+              background: form.is_active ? "#ECFDF5" : "#F9FAFB",
+              color: form.is_active ? "#065F46" : "#6B7280",
+              fontSize: 13,
+              fontWeight: 700,
+              cursor: "pointer",
+            }}
+          >
+            {form.is_active ? "✅ Aktif" : "⏸️ Nonaktif"}
+          </button>
+        </div>
+
+        {error && <p style={{ fontSize: 13, color: "#DC2626" }}>❌ {error}</p>}
+
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+          <button
+            type="button"
+            onClick={onCancel}
+            style={{
+              padding: "8px 16px",
+              background: "transparent",
+              border: "1px solid #E5E7EB",
+              borderRadius: 8,
+              fontSize: 13,
+              fontWeight: 600,
+              color: "#6B7280",
+              cursor: "pointer",
+            }}
+          >
+            Batal
+          </button>
+          <SaveBtn loading={loading} label={data ? "Simpan" : "Tambah"} />
+        </div>
+      </form>
+    </div>
+  );
+}
+
 // ==========================================
 // CONTACT PERSON FORM
 // ==========================================
@@ -2304,6 +2692,7 @@ type TabKey =
   | "pricing"
   | "testimonials"
   | "faq"
+  | "pain_points"
   | "contact";
 
 const TABS: { key: TabKey; label: string; icon: string }[] = [
@@ -2313,6 +2702,7 @@ const TABS: { key: TabKey; label: string; icon: string }[] = [
   { key: "pricing", label: "Pricing", icon: "💰" },
   { key: "testimonials", label: "Testimoni", icon: "⭐" },
   { key: "faq", label: "FAQ", icon: "❓" },
+  { key: "pain_points", label: "Pain Points", icon: "💡" },
   { key: "contact", label: "Kontak", icon: "📞" },
 ];
 
@@ -2347,6 +2737,7 @@ export default function AdminContentPage() {
     pricing: { title: "Pricing Packages", icon: "💰" },
     testimonials: { title: "Testimonials", icon: "⭐" },
     faq: { title: "FAQ", icon: "❓" },
+    pain_points: { title: "Pain Points & Solusi", icon: "💡" },
     contact: { title: "Contact Person", icon: "📞" },
   };
 
@@ -2436,6 +2827,7 @@ export default function AdminContentPage() {
           {activeTab === "pricing" && <PricingManager />}
           {activeTab === "testimonials" && <TestimonialManager />}
           {activeTab === "faq" && <FAQManager />}
+          {activeTab === "pain_points" && <PainPointManager />}
           {activeTab === "contact" && (
             <ContactPersonForm data={data.contact_person} />
           )}

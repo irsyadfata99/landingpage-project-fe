@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { Helmet } from "react-helmet-async";
 import { useContent } from "@/hooks/useContent";
 import { getStats, type PublicStats } from "@/services/api";
@@ -11,10 +11,17 @@ import TrustBadges from "@/components/landing/TrustBadges";
 import ClosingCTA from "@/components/landing/ClosingCTA";
 import CountdownTimer from "@/components/landing/CountdownTimer";
 import FloatingWhatsApp from "@/components/common/FloatingWhatsApp";
+import PainPointSection from "@/components/landing/PainPointSection";
 
 export default function LandingPage() {
   const { data, loading, error } = useContent();
   const [stats, setStats] = useState<PublicStats | null>(null);
+
+  // ==========================================
+  // useMemo WAJIB di atas early return
+  // agar tidak melanggar Rules of Hooks
+  // ==========================================
+  const now = useMemo(() => Date.now(), []);
 
   // Fetch stats secara terpisah — tidak blokir render halaman
   useEffect(() => {
@@ -164,7 +171,7 @@ export default function LandingPage() {
   const showPromoCountdown =
     promo?.is_active &&
     promo.end_date &&
-    new Date(promo.end_date).getTime() > Date.now();
+    new Date(promo.end_date).getTime() > now;
 
   return (
     <div
@@ -238,7 +245,6 @@ export default function LandingPage() {
                   {promo.description}
                 </p>
               )}
-              {/* Countdown timer inline di promo banner */}
               {showPromoCountdown && promo.end_date && (
                 <CountdownTimer
                   endDate={promo.end_date}
@@ -248,6 +254,12 @@ export default function LandingPage() {
             </div>
           </section>
         )}
+
+        {/* Pain Point Section — antara promo dan pricing */}
+        <PainPointSection
+          painPoints={data?.pain_points ?? []}
+          siteConfig={siteConfig}
+        />
 
         <PricingSection pricing={data?.pricing ?? []} siteConfig={siteConfig} />
         <TestiSection testimonials={data?.testimonials ?? []} />

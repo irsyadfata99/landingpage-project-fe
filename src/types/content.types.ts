@@ -119,4 +119,14 @@ export interface LandingPageData {
   faqs: FAQ[];
   contact_person: ContactPerson | null;
   trust_badges: TrustBadge[];
+  pain_points: PainPoint[];
+}
+
+export interface PainPoint {
+  id: string;
+  headline: string;
+  items: string[];
+  is_active: boolean;
+  sort_order: number;
+  updated_at: string;
 }
