@@ -1,5 +1,8 @@
 import { useNavigate } from "react-router-dom";
+import { useState, useEffect } from "react";
 import type { PricingItem, SiteConfig } from "@/types/content.types";
+import type { Product } from "@/types/product.types";
+import { getPublicProducts } from "@/services/api";
 
 interface PricingSectionProps {
   pricing: PricingItem[];
@@ -13,6 +16,119 @@ const formatRupiah = (amount: number) =>
     minimumFractionDigits: 0,
   }).format(amount);
 
+// ==========================================
+// HELPER: hitung total stok dari semua produk aktif
+// Produk digital (stock = null) tidak dihitung
+// ==========================================
+const calcTotalStock = (products: Product[]): number | null => {
+  const physicalProducts = products.filter(
+    (p) =>
+      p.is_active &&
+      p.stock !== null &&
+      (p.product_type === "PHYSICAL" || p.product_type === "BOTH"),
+  );
+  if (physicalProducts.length === 0) return null; // semua digital, tidak perlu badge
+  return physicalProducts.reduce((sum, p) => sum + (p.stock ?? 0), 0);
+};
+
+// ==========================================
+// STOCK BADGE COMPONENT
+// ==========================================
+function StockBadge({ totalStock }: { totalStock: number }) {
+  if (totalStock <= 0) {
+    return (
+      <div
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 6,
+          background: "#FEE2E2",
+          border: "1px solid #FCA5A5",
+          borderRadius: "var(--radius-full)",
+          padding: "4px 12px",
+          fontSize: 12,
+          fontWeight: 700,
+          color: "#DC2626",
+        }}
+      >
+        <span
+          style={{
+            width: 6,
+            height: 6,
+            borderRadius: "50%",
+            background: "#DC2626",
+            display: "inline-block",
+          }}
+        />
+        Stok Habis
+      </div>
+    );
+  }
+
+  if (totalStock < 5) {
+    return (
+      <div
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 6,
+          background: "#FEE2E2",
+          border: "1px solid #FCA5A5",
+          borderRadius: "var(--radius-full)",
+          padding: "4px 12px",
+          fontSize: 12,
+          fontWeight: 700,
+          color: "#DC2626",
+          animation: "pulse-badge 2s ease-in-out infinite",
+        }}
+      >
+        <span
+          style={{
+            width: 6,
+            height: 6,
+            borderRadius: "50%",
+            background: "#DC2626",
+            display: "inline-block",
+          }}
+        />
+        Sisa {totalStock} lagi!
+      </div>
+    );
+  }
+
+  if (totalStock < 10) {
+    return (
+      <div
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 6,
+          background: "#FEF3C7",
+          border: "1px solid #FCD34D",
+          borderRadius: "var(--radius-full)",
+          padding: "4px 12px",
+          fontSize: 12,
+          fontWeight: 700,
+          color: "#D97706",
+        }}
+      >
+        <span
+          style={{
+            width: 6,
+            height: 6,
+            borderRadius: "50%",
+            background: "#D97706",
+            display: "inline-block",
+          }}
+        />
+        Stok Terbatas — Tersisa {totalStock}
+      </div>
+    );
+  }
+
+  return null; // stok >= 10, tidak perlu badge
+}
+
 export default function PricingSection({
   pricing,
   siteConfig,
@@ -21,8 +137,24 @@ export default function PricingSection({
   const primaryColor = siteConfig?.primary_color ?? "#3B82F6";
   const secondaryColor = siteConfig?.secondary_color ?? "#10B981";
 
+  const [totalStock, setTotalStock] = useState<number | null>(null);
+
+  // Fetch produk untuk cek stok — silent fail, tidak blokir render
+  useEffect(() => {
+    getPublicProducts()
+      .then((products) => {
+        const stock = calcTotalStock(products);
+        setTotalStock(stock);
+      })
+      .catch(() => {
+        // silent fail — badge tidak tampil jika gagal
+      });
+  }, []);
+
   const activePricing = pricing.filter((p) => p.is_active);
   if (activePricing.length === 0) return null;
+
+  const showStockBadge = totalStock !== null && totalStock < 10;
 
   return (
     <section
@@ -30,6 +162,13 @@ export default function PricingSection({
       className="section"
       style={{ background: "var(--bg-gray)" }}
     >
+      <style>{`
+        @keyframes pulse-badge {
+          0%, 100% { opacity: 1; transform: scale(1); }
+          50% { opacity: 0.85; transform: scale(1.03); }
+        }
+      `}</style>
+
       <div className="container">
         {/* Header */}
         <div style={{ textAlign: "center", marginBottom: 56 }}>
@@ -53,6 +192,19 @@ export default function PricingSection({
           >
             Dapatkan penawaran terbaik sesuai kebutuhan Anda
           </p>
+
+          {/* Stock badge — tampil di bawah subheading jika stok terbatas */}
+          {showStockBadge && totalStock !== null && (
+            <div
+              style={{
+                marginTop: 16,
+                display: "flex",
+                justifyContent: "center",
+              }}
+            >
+              <StockBadge totalStock={totalStock} />
+            </div>
+          )}
         </div>
 
         {/* Cards */}
@@ -155,6 +307,33 @@ export default function PricingSection({
                 )}
               </div>
 
+              {/* Stock badge per card — hanya jika stok kritis (< 5) */}
+              {showStockBadge &&
+                totalStock !== null &&
+                totalStock < 5 &&
+                totalStock > 0 && (
+                  <div style={{ marginBottom: 16 }}>
+                    <StockBadge totalStock={totalStock} />
+                  </div>
+                )}
+
+              {/* Out of stock notice */}
+              {totalStock === 0 && (
+                <div
+                  style={{
+                    marginBottom: 16,
+                    background: "#F3F4F6",
+                    borderRadius: "var(--radius-sm)",
+                    padding: "8px 12px",
+                    fontSize: 13,
+                    color: "#6B7280",
+                    textAlign: "center",
+                  }}
+                >
+                  Stok sedang kosong, hubungi kami
+                </div>
+              )}
+
               {/* Features */}
               <ul style={{ listStyle: "none", marginBottom: 32, flex: 1 }}>
                 {item.features.map((feature, i) => (
@@ -187,19 +366,34 @@ export default function PricingSection({
               {/* CTA */}
               <button
                 onClick={() => navigate("/checkout")}
+                disabled={totalStock === 0}
                 style={{
                   width: "100%",
-                  background: item.is_popular ? primaryColor : "transparent",
-                  color: item.is_popular ? "#fff" : primaryColor,
-                  border: `2px solid ${primaryColor}`,
+                  background:
+                    totalStock === 0
+                      ? "#E5E7EB"
+                      : item.is_popular
+                        ? primaryColor
+                        : "transparent",
+                  color:
+                    totalStock === 0
+                      ? "#9CA3AF"
+                      : item.is_popular
+                        ? "#fff"
+                        : primaryColor,
+                  border:
+                    totalStock === 0
+                      ? "2px solid #E5E7EB"
+                      : `2px solid ${primaryColor}`,
                   borderRadius: "var(--radius)",
                   padding: "12px 20px",
                   fontSize: 15,
                   fontWeight: 700,
-                  cursor: "pointer",
+                  cursor: totalStock === 0 ? "not-allowed" : "pointer",
                   transition: "background 0.2s, color 0.2s",
                 }}
                 onMouseOver={(e) => {
+                  if (totalStock === 0) return;
                   if (!item.is_popular) {
                     (e.currentTarget as HTMLButtonElement).style.background =
                       primaryColor;
@@ -207,6 +401,7 @@ export default function PricingSection({
                   }
                 }}
                 onMouseOut={(e) => {
+                  if (totalStock === 0) return;
                   if (!item.is_popular) {
                     (e.currentTarget as HTMLButtonElement).style.background =
                       "transparent";
@@ -215,7 +410,7 @@ export default function PricingSection({
                   }
                 }}
               >
-                {item.cta_text}
+                {totalStock === 0 ? "Stok Habis" : item.cta_text}
               </button>
             </div>
           ))}
