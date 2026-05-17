@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState } from "react";
 import { Helmet } from "react-helmet-async";
 import { useContent } from "@/hooks/useContent";
 import { getStats, type PublicStats } from "@/services/api";
@@ -21,7 +21,7 @@ export default function LandingPage() {
   // useMemo WAJIB di atas early return
   // agar tidak melanggar Rules of Hooks
   // ==========================================
-  const now = useMemo(() => Date.now(), []);
+  const [now] = useState(() => Date.now());
 
   // Fetch stats secara terpisah — tidak blokir render halaman
   useEffect(() => {
